@@ -111,6 +111,27 @@ costs more than the wait saved. Above that floor, latency tracks the timeout
 roughly one to one. A captured trace of the failure is in
 [`artifacts/turn-detection/`](artifacts/turn-detection/).
 
+### 2b. Two default timeouts cost more than any model
+
+Pipecat closes a turn when **two** timers have both finished, and both defaults
+are sized for a hosted service reached over a network:
+
+| Timer | Default | What it is |
+|---|---|---|
+| `ttfs_p99_latency` | **1.0 s** | safety net for how long STT takes to return a final transcript. Unset by default, so the fallback applies, and it logs a warning most people never read. |
+| `user_speech_timeout` | **0.6 s** | policy window in which the user may resume speaking |
+
+Whisper tiny returns a transcript in about 60 ms locally. The pipeline was
+waiting up to a second for something that had already arrived. Setting both
+honestly for a local stack:
+
+```
+streaming, stock defaults      1900 ms
+streaming, timers set locally  1342 ms      -558 ms, no model changed
+```
+
+Neither of those numbers is a model cost. `make tuned` runs it.
+
 ### 3. Streaming's win is mostly not overlap
 
 Overlapping the LLM and TTS recovered 286 ms. Emitting TTS's first chunk instead

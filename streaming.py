@@ -88,7 +88,12 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
     )
     transport = WavFileTransport(params, wav, capture, trailing_silence_s=3.0)
 
-    stt = WhisperSTTServiceMLX(model=MLXModel.LARGE_V3_TURBO_Q4)
+    stt = WhisperSTTServiceMLX(
+        model=CONFIG.stt_model,
+        # Without this Pipecat assumes 1.0 s for a local model that returns in
+        # tens of milliseconds, and holds the turn open waiting. See config.py.
+        ttfs_p99_latency=CONFIG.stt_ttfs_p99,
+    )
     llm = OLLamaLLMService(
         model="llama3.2:3b",
         settings=OllamaLLMSettings(
