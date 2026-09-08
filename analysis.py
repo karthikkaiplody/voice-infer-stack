@@ -14,6 +14,11 @@ Two rules this module exists to enforce:
    unlabelled 2. Both are handled below and both are reported.
 """
 
+# Keeps this file runnable on the system Python that ships with macOS
+# (3.9). budget.py and analysis.py are pure standard library on purpose:
+# reading the committed traces should need no install at all.
+from __future__ import annotations
+
 import collections
 import json
 from pathlib import Path

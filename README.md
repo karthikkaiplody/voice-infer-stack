@@ -21,17 +21,21 @@ repo is the method, so you can get yours.
 
 ## See the numbers without installing anything
 
-The traces are committed. You do not need a GPU, Ollama, or 4 GB of model
-weights to read them:
+Not "without installing models" — without installing **anything**. The traces
+are committed, and `budget.py` and `analysis.py` are pure standard library:
 
 ```bash
 git clone https://github.com/karthikkaiplody/voice-infer-stack
 cd voice-infer-stack
-uv sync
-make budget
+python3 budget.py
 ```
 
-That prints where every millisecond of one turn went, from a real recorded run.
+No virtualenv, no dependencies, no GPU, no Ollama, no model weights. Tested on
+the Python 3.9 that ships with macOS. It prints where every millisecond of one
+real recorded turn went.
+
+That is deliberate. The pipeline is how the traces were made; the traces and the
+analysis are the part worth reading.
 
 ## Run it yourself
 
