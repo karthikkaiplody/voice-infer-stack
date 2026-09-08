@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "One Turn, Measured: Where the Milliseconds Go",
+    "viewBox": [
+      1020,
+      566
+    ],
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Turn phases"
+    },
+    {
+      "id": "risk",
+      "label": "When stop_secs is below the speaker's pause"
+    }
+  ],
+  "states": [
+    {
+      "id": "listening",
+      "type": "start",
+      "label": "Listening",
+      "sublabel": "3500 ms of speech",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "user talks"
+    },
+    {
+      "id": "silence",
+      "type": "waiting",
+      "label": "Silence Wait",
+      "sublabel": "stop_secs = 500 ms",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "zero compute"
+    },
+    {
+      "id": "transcribe",
+      "type": "active",
+      "label": "Transcribing",
+      "sublabel": "Whisper v3 turbo, MLX",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "segmented"
+    },
+    {
+      "id": "generate",
+      "type": "active",
+      "label": "Generating",
+      "sublabel": "Llama 3.2 3B, 549 ms",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "streams"
+    },
+    {
+      "id": "speak",
+      "type": "success",
+      "label": "Speaking",
+      "sublabel": "first byte at 1620 ms",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "measured"
+    },
+    {
+      "id": "falseend",
+      "type": "failure",
+      "label": "False Endpoint",
+      "sublabel": "pause exceeds stop_secs",
+      "lane": "risk",
+      "col": 0,
+      "tag": "260 ms pause"
+    },
+    {
+      "id": "discard",
+      "type": "failure",
+      "label": "Work Discarded",
+      "sublabel": "2.00 LLM calls per run",
+      "lane": "risk",
+      "col": 2,
+      "tag": "wasted"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "speech-ends",
+      "from": "listening",
+      "to": "silence",
+      "variant": "emphasis"
+    },
+    {
+      "id": "turn-ends",
+      "from": "silence",
+      "to": "transcribe",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "transcript-ready",
+      "from": "transcribe",
+      "to": "generate",
+      "label": "whole transcript",
+      "variant": "emphasis",
+      "labelDy": -25
+    },
+    {
+      "id": "first-sentence",
+      "from": "generate",
+      "to": "speak",
+      "label": "292 ms overlap",
+      "variant": "emphasis",
+      "labelDy": -25
+    },
+    {
+      "id": "fires-early",
+      "from": "silence",
+      "to": "falseend",
+      "label": "fires mid sentence",
+      "variant": "security",
+      "labelDy": -10
+    },
+    {
+      "id": "answers-partial",
+      "from": "falseend",
+      "to": "discard",
+      "variant": "security"
+    },
+    {
+      "id": "reopens",
+      "from": "discard",
+      "to": "listening",
+      "label": "user was still speaking",
+      "variant": "dashed",
+      "route": "bottom-channel",
+      "channelY": 392,
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "The Stage Nobody Counts",
+      "items": [
+        "Silence Wait is a real phase of every turn and it computes nothing",
+        "It exists so the agent will not interrupt a speaker who paused to think",
+        "Raising stop_secs 0.3 s to 0.8 s cost 629 ms: about 1 ms of delay per 1 ms of timeout"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Why You Cannot Just Lower It",
+      "items": [
+        "This fixture has a 260 ms clause pause inside one sentence",
+        "At stop_secs 0.2 s the endpoint fires there and the agent answers a fragment",
+        "End to end got worse, not better: 2233 ms at 0.2 s versus 1354 ms at 0.3 s"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "How This Was Measured",
+      "items": [
+        "M4 Pro 24 GB, pipecat 1.8.1, fully local, no API keys",
+        "WAV injected at 20 ms real-time cadence so the endpointer sees microphone-shaped audio",
+        "Median of 4 runs per cell; overlap from span interval intersection, never duration sums"
+      ]
+    }
+  ]
+}

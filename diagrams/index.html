@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Where Did My 800 Milliseconds Go? — Diagrams</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 48px 32px; background: #0b1120; color: #e2e8f0;
+         font: 15px/1.6 ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  p.sub { margin: 0 0 40px; color: #7c8aa5; }
+  a.card { display: block; text-decoration: none; color: inherit; margin-bottom: 20px;
+           padding: 20px 24px; border: 1px solid #1e293b; border-radius: 12px;
+           background: #0f172a; transition: border-color .15s, transform .15s; }
+  a.card:hover { border-color: #34d399; transform: translateY(-2px); }
+  a.card h2 { font-size: 16px; margin: 0 0 6px; color: #34d399; }
+  a.card span { color: #7c8aa5; font-size: 13px; }
+  .pngs { margin-top: 40px; padding-top: 24px; border-top: 1px solid #1e293b; color: #7c8aa5; font-size: 13px; }
+  code { color: #e2e8f0; }
+</style>
+</head>
+<body><main>
+<h1>Where Did My 800 Milliseconds Go?</h1>
+<p class="sub">Three diagrams, all built from real traces on an M4 Pro. Click to open.</p>
+
+<a class="card" href="cascade-pipeline.html">
+  <h2>1 &middot; Cascade pipeline &mdash; what overlaps and what cannot</h2>
+  <span>Segmented Whisper can't overlap. LLM/TTS intersect for 292&nbsp;ms. Durations sum to 1759&nbsp;ms; their union is 1467&nbsp;ms.</span>
+</a>
+<a class="card" href="turn-timeline.html">
+  <h2>2 &middot; One turn, measured &mdash; where the milliseconds go</h2>
+  <span>Silence Wait as a first-class phase: <code>stop_secs</code> burns zero FLOPs and is paid every single turn.</span>
+</a>
+<a class="card" href="false-endpoint.html">
+  <h2>3 &middot; False endpoint &mdash; one utterance, two answers</h2>
+  <span>At <code>stop_secs = 0.2</code> a 260&nbsp;ms clause pause reads as end of turn. The first answer is cancelled after 2.5&nbsp;ms.</span>
+</a>
+
+<p class="pngs">Slide-ready PNGs (2&times; DPI, dark and light) are in <code>slides/</code>.
+<code>*.clean.*</code> has no toolbar or header &mdash; use those in the deck.
+Regenerate with <code>node render-slides.mjs</code>.</p>
+</main></body>
+</html>
