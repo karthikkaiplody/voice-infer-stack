@@ -81,6 +81,8 @@ It will also tell you something specific about how you talk:
 | `clips.py` | Writes what each build sounds like, real silences included. |
 | `record.py` | Record your own utterance and measure its endpoints. |
 | `sweep.py` | Sweeps the VAD silence timeout. See "the knob" below. |
+| `chart.py` | Renders the waterfall. One shared x-axis across every chart. |
+| `test_measurements.py` | Invariants that catch a wrong number before it reaches a slide. |
 | `make_fixtures.py` | Regenerates the synthetic utterances with Kokoro. No API keys. |
 
 ## Three things this repo exists to show
@@ -137,6 +139,14 @@ Voice latency is easy to measure wrongly. What this repo does:
   compilation. Cold runs are 2-4x slower and are not representative.
 - **Medians with the sample count reported**, and failed runs counted, not
   silently dropped.
+- **A row that the two builds measure differently is marked, not averaged.**
+  Streaming observes end-of-turn through the pipeline; naive reads the VAD state
+  directly. Until that is attributed, the row is hatched on the chart and
+  flagged in `make budget` rather than presented as a like-for-like comparison.
+
+`uv run pytest -q` checks these hold. The tests run against the committed traces,
+so they need no models. They are deliberately about the numbers rather than the
+plumbing: the failure that matters here is a chart that is quietly wrong.
 
 ## Point it at your own agent
 

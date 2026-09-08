@@ -31,7 +31,26 @@ class Config:
     # no longer mean anything. Smart turn is a separate lever, measured on its
     # own in sweep.py.
     use_smart_turn: bool = False
-    trailing_silence_s: float = 3.0
+
+    # Pipecat's endpointing knobs, stated explicitly rather than left implicit.
+    # Both are at Pipecat's own defaults: changing them was measured and did NOT
+    # explain the gap below, so running at stock is the more representative
+    # choice.
+    #   user_speech_timeout - a policy window after VAD stop in which the user
+    #     may resume before the turn is closed.
+    #   wait_for_transcript - also wait for STT to return a transcript.
+    user_speech_timeout: float = 0.6
+    wait_for_transcript: bool = True
+
+    # KNOWN GAP, do not present these two rows side by side.
+    # naive.py observes end-of-turn as a Silero VAD state transition and
+    # measures ~562 ms after end of speech, consistent with stop_secs=0.5.
+    # streaming.py observes UserStoppedSpeakingFrame travelling the pipeline and
+    # measures ~1065-1158 ms. Setting user_speech_timeout to 0 and
+    # wait_for_transcript to False were both tried and neither accounts for the
+    # difference, so the cause is still unattributed.
+    # End-to-end totals are unaffected: those come from one clock on both sides.
+    # budget.py marks the row rather than implying the two are the same number.
 
     # --- determinism ---
     # A varying reply length changes TTS duration, which changes end-to-end

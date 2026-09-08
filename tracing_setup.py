@@ -137,8 +137,16 @@ class TurnEndObserver(BaseObserver):
                 self._capture.t_turn_end = time.monotonic()
 
 
-def emit_turn_detection_span(capture, strategy: str, stop_secs: float):
-    """The silence wait, as its own span, on the shared wall clock."""
+def emit_turn_detection_span(capture, strategy: str, stop_secs: float,
+                             measured_as: str = "unknown"):
+    """The silence wait, as its own span, on the shared wall clock.
+
+    `measured_as` records HOW the moment was observed, because the two builds
+    cannot observe it the same way: naive reads the VAD state transition
+    directly, streaming sees UserStoppedSpeakingFrame travel the pipeline. With
+    endpointing policy matched they agree closely, but the provenance is kept on
+    the span so the rows are never silently treated as identical measurements.
+    """
     if capture.t_speech_end is None or capture.t_turn_end is None:
         return
     tracer = trace.get_tracer("voice-infer-stack")
@@ -148,4 +156,5 @@ def emit_turn_detection_span(capture, strategy: str, stop_secs: float):
     span.set_attribute("strategy", strategy)
     span.set_attribute("vad.stop_secs", stop_secs)
     span.set_attribute("wait_ms", round(capture.turn_detection_wait * 1000, 1))
+    span.set_attribute("measured_as", measured_as)
     span.end(end_time=capture.to_wall_ns(capture.t_turn_end))

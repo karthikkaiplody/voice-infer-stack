@@ -96,7 +96,7 @@ async def listen(wav_path: str, capture: Capture) -> tuple[bytes, float]:
             )
             break
 
-    emit_turn_detection_span(capture, "vad_timeout", CONFIG.vad_stop_secs)
+    emit_turn_detection_span(capture, "vad_timeout", CONFIG.vad_stop_secs, measured_as="vad_state_transition")
     return pcm[:n_speech * chunk], capture.rel(time.monotonic())
 
 
