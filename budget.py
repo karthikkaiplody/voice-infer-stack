@@ -12,6 +12,11 @@ The number that matters is not the total. It is which stage owns it, and how
 much of the stage time is recovered by overlapping rather than by being faster.
 """
 
+# Keeps this file runnable on the system Python that ships with macOS
+# (3.9). budget.py and analysis.py are pure standard library on purpose:
+# reading the committed traces should need no install at all.
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
