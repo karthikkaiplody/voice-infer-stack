@@ -97,9 +97,19 @@ def summarize(spans, win):
     covered_ms = analysis.union_ms(compute_ivs)
     sum_ms = analysis.duration_sum_ms(compute_ivs)
 
+    def how(name):
+        """Provenance of THIS turn's span, not the first one in the file."""
+        for sp in spans:
+            if (sp["name"] == name
+                    and sp["end_time_ns"] > window[0]
+                    and sp["start_time_ns"] < window[1]):
+                return sp["attributes"].get("measured_as")
+        return None
+
     rows = [{"stage": n,
              "duration_ms": analysis.duration_sum_ms(inside[n]),
-             "count": raw_counts[n]} for n in present]
+             "count": raw_counts[n],
+             "measured_as": how(n)} for n in present]
 
     compute = [n for n in present if n in COMPUTE]
     pairs = []
@@ -129,6 +139,8 @@ def render(summary, label):
         note = ""
         if r["stage"] == "turn_detection":
             note = "waiting, not computing"
+            if r.get("measured_as") == "pipeline_frame_observed":
+                note = "NOT COMPARABLE - see config.py"
         elif r["stage"] == "stt" and r["count"] == 1:
             note = "cannot overlap (segmented)"
         if r["count"] > 1:

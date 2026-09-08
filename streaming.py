@@ -33,7 +33,10 @@ from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.services.ollama.llm import OLLamaLLMService, OllamaLLMSettings
 from pipecat.services.whisper.stt import MLXModel, WhisperSTTServiceMLX
 from pipecat.transports.base_transport import TransportParams
-from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
+from pipecat.turns.user_stop import (
+    SpeechTimeoutUserTurnStopStrategy,
+    TurnAnalyzerUserTurnStopStrategy,
+)
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
@@ -102,16 +105,22 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
         context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=stop_secs)),
-            # See CONFIG.use_smart_turn: off by default so both builds
-            # endpoint identically and only scheduling differs.
-            user_turn_strategies=(
-                UserTurnStrategies(
-                    stop=[TurnAnalyzerUserTurnStopStrategy(
+            # Endpointing is stated explicitly rather than left to the
+            # default. Pipecat's default strategy adds a 0.6 s policy window on
+            # top of the VAD silence window (see CONFIG.user_speech_timeout),
+            # which would make this build wait ~600 ms longer than naive.py for
+            # reasons that have nothing to do with scheduling.
+            user_turn_strategies=UserTurnStrategies(
+                stop=[
+                    TurnAnalyzerUserTurnStopStrategy(
                         turn_analyzer=LocalSmartTurnAnalyzerV3()
-                    )]
-                )
-                if CONFIG.use_smart_turn
-                else None
+                    )
+                    if CONFIG.use_smart_turn
+                    else SpeechTimeoutUserTurnStopStrategy(
+                        user_speech_timeout=CONFIG.user_speech_timeout,
+                        wait_for_transcript=CONFIG.wait_for_transcript,
+                    )
+                ]
             ),
             # NOT using filter_incomplete_user_turns: measured, it costs an
             # 860-token classifier call plus a ~5s wait for speech that never
@@ -165,7 +174,7 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
     except (asyncio.TimeoutError, asyncio.CancelledError):
         pass
 
-    emit_turn_detection_span(capture, "vad_timeout", stop_secs)
+    emit_turn_detection_span(capture, "vad_timeout", stop_secs, measured_as="pipeline_frame_observed")
     emit_e2e_span(capture, "streaming", Path(wav).stem)
     return capture
 
