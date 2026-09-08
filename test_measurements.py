@@ -113,23 +113,82 @@ def test_overlap_never_exceeds_the_smaller_stage(runs):
 
 # --- the thing that would invalidate the whole comparison -------------------
 
+def runs_for(spans):
+    return [(w, budget.summarize(spans, w)) for w in budget.windows(spans)]
+
+
 def norm(text):
     return re.sub(r"[^a-z0-9 ]", "", (text or "").lower()).strip()
 
 
-def test_both_builds_transcribed_the_same_words(spans):
+def _models(spans, stage, window):
+    return {sp["attributes"].get("gen_ai.request.model")
+            for sp in spans
+            if sp["name"] == stage
+            and sp["end_time_ns"] > window[0]
+            and sp["start_time_ns"] < window[1]}
+
+
+def test_both_builds_used_the_same_models(spans, runs):
+    """The comparison is void if the builds ran different models.
+
+    This is not hypothetical. streaming.py hardcoded llama3.2:3b while naive.py
+    read CONFIG, so one tuned run compared a 1b naive build against a 3b
+    streaming build and still got reported as "only scheduling differs".
+    """
+    per_mode = {}
+    for w, _ in runs:
+        mode = w["attributes"].get("mode")
+        window = (w["start_time_ns"], w["end_time_ns"])
+        for stage in ("llm", "stt"):
+            got = {m for m in _models(spans, stage, window) if m}
+            if got:
+                per_mode.setdefault(stage, {}).setdefault(mode, set()).update(got)
+
+    for stage, modes in per_mode.items():
+        distinct = set().union(*modes.values())
+        assert len(distinct) == 1, (
+            f"{stage} ran on different models across builds: "
+            + ", ".join(f"{m}={sorted(v)}" for m, v in modes.items())
+        )
+
+
+def test_streaming_reads_config_rather_than_hardcoding(spans, runs):
+    """The streaming build must report the model config.py asked for."""
+    for w, _ in runs:
+        if w["attributes"].get("mode") != "streaming":
+            continue
+        window = (w["start_time_ns"], w["end_time_ns"])
+        got = {m for m in _models(spans, "llm", window) if m}
+        if got:
+            assert got == {CONFIG.llm_model}, (
+                f"streaming used {sorted(got)} but config.py says "
+                f"{CONFIG.llm_model}"
+            )
+
+
+def test_both_builds_transcribed_the_same_words(spans, runs):
     """If the builds heard different things, they are not comparable.
 
     Compared on normalized text: raw comparison fails on punctuation and
     casing, which is noise, not drift.
     """
-    seen = {}
-    for s in spans:
-        t = s["attributes"].get("transcript")
-        if s["name"] == "stt" and t:
-            seen.setdefault(norm(t), 0)
-            seen[norm(t)] += 1
-    assert len(seen) <= 1, f"builds produced different transcripts: {list(seen)}"
+    per_mode = {}
+    for w, _ in runs_for(spans):
+        mode = w["attributes"].get("mode")
+        lo, hi = w["start_time_ns"], w["end_time_ns"]
+        for sp in spans:
+            t = sp["attributes"].get("transcript")
+            if (sp["name"] == "stt" and t
+                    and sp["end_time_ns"] > lo and sp["start_time_ns"] < hi):
+                per_mode.setdefault(mode, set()).add(norm(t))
+
+    assert len(per_mode) >= 2, (
+        f"need both builds to compare transcripts, saw {sorted(per_mode)}")
+    texts = set().union(*per_mode.values())
+    assert len(texts) == 1, (
+        "builds heard different words: "
+        + "; ".join(f"{m}={sorted(v)}" for m, v in per_mode.items()))
 
 
 def test_no_discarded_work_in_the_reference_run(runs):
@@ -189,6 +248,8 @@ def test_config_has_every_field_the_builds_use():
         "stt_model", "llm_model", "tts_voice",
         "input_sample_rate", "output_sample_rate", "chunk_ms",
         "vad_stop_secs", "trailing_silence_s",
+        "use_smart_turn", "user_speech_timeout", "wait_for_transcript",
+        "stt_ttfs_p99",
         "llm_temperature", "llm_seed", "llm_max_tokens", "system_prompt",
         "warmup_reps", "measured_reps",
     }

@@ -176,11 +176,15 @@ def synthesize(reply: str, capture: Capture) -> np.ndarray:
         },
     ) as span:
         kokoro = Kokoro(str(model), str(voices))
+        t_call = time.monotonic()
         samples, rate = kokoro.create(reply, voice=CONFIG.tts_voice, speed=1.0,
                                       lang="en-us")
         # First audio exists only now, once the ENTIRE reply is synthesized.
         capture.t_first_audio = time.monotonic()
-        span.set_attribute("metrics.ttfb", capture.t_first_audio - capture.t_origin)
+        # Measured from the TTS call, matching Pipecat's metrics.ttfb semantics.
+        # Measuring from the start of the run instead made this attribute look
+        # like seconds and left it incomparable with the streaming build.
+        span.set_attribute("metrics.ttfb", capture.t_first_audio - t_call)
     return np.asarray(samples, dtype=np.float32), rate
 
 
