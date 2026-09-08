@@ -176,6 +176,34 @@ def test_fixture_pause_is_compatible_with_stop_secs():
 
 # --- statistics -------------------------------------------------------------
 
+def test_config_has_every_field_the_builds_use():
+    """A missing config field breaks a build that no other test exercises.
+
+    `trailing_silence_s` was deleted by an over-wide edit and stayed broken
+    through two commits, because the invariants read committed traces and never
+    run naive.py. This asserts the surface both builds actually import.
+    """
+    from dataclasses import fields as dc_fields
+
+    required = {
+        "stt_model", "llm_model", "tts_voice",
+        "input_sample_rate", "output_sample_rate", "chunk_ms",
+        "vad_stop_secs", "trailing_silence_s",
+        "llm_temperature", "llm_seed", "llm_max_tokens", "system_prompt",
+        "warmup_reps", "measured_reps",
+    }
+    have = {f.name for f in dc_fields(CONFIG)}
+    assert required <= have, f"config.py is missing {sorted(required - have)}"
+
+
+def test_both_builds_import_cleanly():
+    """Catches a broken module before a bench run does, which costs minutes."""
+    import importlib
+
+    for mod in ("naive", "streaming", "chart", "clips", "bench"):
+        importlib.import_module(mod)
+
+
 def test_median_is_a_real_median():
     """sorted(x)[len(x)//2] is the upper-middle value, not the median, for any
     even sample. That bug silently shifted every number in an earlier sweep."""

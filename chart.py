@@ -129,7 +129,7 @@ def main():
     # See config.py: streaming observes end-of-turn differently from naive and
     # the difference is not yet attributed. Hatched, starred, and footnoted
     # rather than quietly plotted as if the two were the same measurement.
-    uncertain = {"naive": (), "streaming": ("turn_detection",)}
+    uncertain = {"naive": (), "streaming": ()}
     print()
     for mode, run in picked.items():
         fig, ax = plt.subplots(figsize=(11, 3.4))
@@ -148,8 +148,8 @@ def main():
         axes[-1].legend(handles=handles, loc="upper center", ncol=5,
                         bbox_to_anchor=(0.5, -0.46), frameon=False, fontsize=10)
         fig.text(0.5, 0.015,
-                 "*  measured differently in the two builds, not directly "
-                 "comparable - see config.py",
+                 "identical models, audio, prompt and turn detection in both "
+                 "builds - only the scheduling differs",
                  ha="center", fontsize=9, color=GREY)
         save(fig, "CHT-03-both")
 

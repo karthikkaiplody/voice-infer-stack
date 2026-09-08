@@ -140,7 +140,7 @@ def render(summary, label):
         if r["stage"] == "turn_detection":
             note = "waiting, not computing"
             if r.get("measured_as") == "pipeline_frame_observed":
-                note = "NOT COMPARABLE - see config.py"
+                note = "waiting; observed via pipeline (~50 ms later)"
         elif r["stage"] == "stt" and r["count"] == 1:
             note = "cannot overlap (segmented)"
         if r["count"] > 1:

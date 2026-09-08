@@ -5,6 +5,7 @@
 #   make fixtures   regenerate the synthetic utterances
 #   make record     record your own voice
 #   make bench      run both builds and write fresh traces
+#   make tuned      re-run with settings sized for a local stack
 #   make sweep      sweep the VAD silence timeout
 #   make clips      write the cold-open audio for both builds
 #   make charts     render the waterfall
@@ -15,7 +16,7 @@ TRACES  ?= artifacts/reference-traces.jsonl
 SECONDS ?= 6
 NAME    ?= my-question
 
-.PHONY: help setup models budget fixtures record bench sweep clips charts test clean
+.PHONY: help setup models budget fixtures record bench tuned sweep clips charts test clean
 
 help:
 	@grep -E '^#   ' Makefile | sed 's/^#   //'
@@ -40,6 +41,15 @@ record: ## record your own utterance: make record NAME=my-question SECONDS=6
 
 bench: ## run both builds: make bench FIXTURE=02-medium REPS=3
 	uv run python bench.py --fixture $(FIXTURE) --reps $(REPS) --traces $(TRACES)
+
+tuned: ## the same pipeline with local-appropriate settings (see README)
+	VOICE_STT_MODEL=mlx-community/whisper-tiny \
+	VOICE_LLM_MODEL=llama3.2:1b \
+	VOICE_VAD_STOP_SECS=0.3 \
+	VOICE_USER_SPEECH_TIMEOUT=0.0 \
+	uv run python bench.py --fixture $(FIXTURE) --reps $(REPS) \
+	    --traces artifacts/tuned-traces.jsonl
+	uv run python budget.py --traces artifacts/tuned-traces.jsonl
 
 sweep: ## sweep the VAD silence timeout and show what it costs
 	uv run python sweep.py
