@@ -191,10 +191,15 @@ def main():
     for mode, ws in by_mode.items():
         ws = ws[args.skip_warmup:] if len(ws) > args.skip_warmup else ws
         totals = [(w["end_time_ns"] - w["start_time_ns"]) / 1e6 for w in ws]
-        s = summarize(spans, ws[-1])
+        med = analysis.median(totals)
+        # Render the run whose total IS the median, so the stage rows belong to
+        # the run whose number is printed. Rendering the last run under a median
+        # label silently mixes two different runs.
+        chosen = min(ws, key=lambda w:
+                     abs((w["end_time_ns"] - w["start_time_ns"]) / 1e6 - med))
+        s = summarize(spans, chosen)
         if s:
-            render(s, f"median of {len(ws)} runs: "
-                      f"{analysis.median(totals):.0f} ms")
+            render(s, f"median of {len(ws)} runs: {med:.0f} ms")
 
 
 if __name__ == "__main__":

@@ -65,17 +65,6 @@ REPS = 3
 from config import CONFIG
 VAD_STOP_SECS = CONFIG.vad_stop_secs
 TRACES = Path("artifacts/spike-traces.jsonl")
-# NOTE (spike finding): "reply in one short sentence" structurally kills the
-# LLM->TTS overlap this talk is about. Pipecat feeds TTS at sentence
-# boundaries; with a single sentence the first boundary IS the end of
-# generation, so TTS cannot start early and streaming buys nothing. A
-# realistic voice reply is 2-3 sentences, and that is where overlap lives.
-SYSTEM = (
-    "You are a voice assistant. Answer in two or three short spoken sentences. "
-    "No emojis, no lists, no formatting."
-)
-
-
 async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture:
     wav = wav or WAV
     stop_secs = VAD_STOP_SECS if stop_secs is None else stop_secs
@@ -83,10 +72,11 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
     params = TransportParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
-        audio_in_sample_rate=16000,
-        audio_out_sample_rate=24000,
+        audio_in_sample_rate=CONFIG.input_sample_rate,
+        audio_out_sample_rate=CONFIG.output_sample_rate,
     )
-    transport = WavFileTransport(params, wav, capture, trailing_silence_s=3.0)
+    transport = WavFileTransport(params, wav, capture,
+                                 trailing_silence_s=CONFIG.trailing_silence_s)
 
     stt = WhisperSTTServiceMLX(
         model=CONFIG.stt_model,
@@ -94,16 +84,21 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
         # tens of milliseconds, and holds the turn open waiting. See config.py.
         ttfs_p99_latency=CONFIG.stt_ttfs_p99,
     )
+    # EVERY value here comes from CONFIG. Hardcoding any of them is how the two
+    # builds silently end up running different models, which invalidates the
+    # whole comparison. That is not hypothetical: this file hardcoded
+    # llama3.2:3b while naive.py read CONFIG, and one tuned run compared a 1b
+    # naive build against a 3b streaming build before it was caught.
     llm = OLLamaLLMService(
-        model="llama3.2:3b",
+        model=CONFIG.llm_model,
         settings=OllamaLLMSettings(
-            system_instruction=SYSTEM,
-            temperature=0.0,
-            seed=42,
-            max_tokens=60,
+            system_instruction=CONFIG.system_prompt,
+            temperature=CONFIG.llm_temperature,
+            seed=CONFIG.llm_seed,
+            max_tokens=CONFIG.llm_max_tokens,
         ),
     )
-    tts = KokoroTTSService(voice_id="af_heart")
+    tts = KokoroTTSService(voice_id=CONFIG.tts_voice)
 
     context = LLMContext()
     user_agg, assistant_agg = LLMContextAggregatorPair(
