@@ -1,0 +1,67 @@
+[
+  {
+    "name": "01-short",
+    "file": "01-short.wav",
+    "text": "What time is it?",
+    "source": "synthetic:kokoro",
+    "voice": "af_heart",
+    "sample_rate": 16000,
+    "duration_ms": 1088.0,
+    "t_speech_end_ms": 920.0,
+    "internal_pauses_ms": [
+      40.0,
+      60.0
+    ],
+    "max_internal_pause_ms": 60.0,
+    "min_workable_stop_secs": 0.06,
+    "sha256": "b592de6634bd4e8088979439373633b316d8f7a3b8f8338512569d21aa0f1136"
+  },
+  {
+    "name": "02-medium",
+    "file": "02-medium.wav",
+    "text": "Can you tell me what the weather is going to be like tomorrow afternoon?",
+    "source": "synthetic:kokoro",
+    "voice": "af_heart",
+    "sample_rate": 16000,
+    "duration_ms": 3690.7,
+    "t_speech_end_ms": 3500.0,
+    "internal_pauses_ms": [
+      40.0,
+      260.0,
+      80.0,
+      20.0,
+      40.0,
+      20.0,
+      40.0,
+      100.0,
+      20.0,
+      80.0
+    ],
+    "max_internal_pause_ms": 260.0,
+    "min_workable_stop_secs": 0.26,
+    "sha256": "fe4f15856419f775b5b76ed1f2d124a5506d62f28dae024cec4ce9dfc20af07c"
+  },
+  {
+    "name": "03-trailing-pause",
+    "file": "03-trailing-pause.wav",
+    "text": "I was wondering if you could help me... find a good restaurant nearby.",
+    "source": "synthetic:kokoro",
+    "voice": "af_heart",
+    "sample_rate": 16000,
+    "duration_ms": 3584.0,
+    "t_speech_end_ms": 3480.0,
+    "internal_pauses_ms": [
+      20.0,
+      20.0,
+      80.0,
+      420.0,
+      40.0,
+      20.0,
+      20.0,
+      20.0
+    ],
+    "max_internal_pause_ms": 420.0,
+    "min_workable_stop_secs": 0.42,
+    "sha256": "8e40f2118ff7f8f9517bccce6aaf6bcd65474ba67424848a168d97f1a382232b"
+  }
+]

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node leftovers from tooling
+build/
+
+# Local tool config, not part of the project
+.mcp.json
+.ignore
+
+# graft's local graph cache - regenerable, not committed (run `graft build`).
+/graft/
+
+# archify browser-evidence sidecars: QA output, not deliverables.
+# The delivered .html and its .json spec ARE committed.
+diagrams/*.visual-check.*
+
+# Conductor workspace scratch
+.context/
