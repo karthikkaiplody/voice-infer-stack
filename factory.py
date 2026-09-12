@@ -101,7 +101,29 @@ def make_vad():
     from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.audio.vad.vad_analyzer import VADParams
 
-    return SileroVADAnalyzer(params=VADParams(stop_secs=CONFIG.vad_stop_secs))
+    return SileroVADAnalyzer(params=VADParams(
+        stop_secs=CONFIG.vad_stop_secs,
+        min_volume=CONFIG.vad_min_volume,
+    ))
+
+
+def list_input_devices():
+    """Every input device, so a silent pipeline can be diagnosed rather than guessed at."""
+    import pyaudio
+
+    pa = pyaudio.PyAudio()
+    try:
+        default = pa.get_default_input_device_info()["index"]
+        out = []
+        for i in range(pa.get_device_count()):
+            d = pa.get_device_info_by_index(i)
+            if d["maxInputChannels"] > 0:
+                out.append({"index": d["index"], "name": d["name"],
+                            "channels": d["maxInputChannels"],
+                            "default": d["index"] == default})
+        return out
+    finally:
+        pa.terminate()
 
 
 def describe() -> str:

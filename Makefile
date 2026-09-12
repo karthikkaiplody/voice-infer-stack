@@ -8,6 +8,7 @@
 #   make tuned      re-run with settings sized for a local stack
 #   make sweep      sweep the VAD silence timeout
 #   make clips      write the cold-open audio for both builds
+#   make devices   list microphones so you can pick the right one
 #   make live      talk to the agent live and watch it flow (localhost:8080)
 #   make viewer     open one turn as an HTML timeline in your browser
 #   make charts     render the waterfall
@@ -18,7 +19,7 @@ TRACES  ?= artifacts/reference-traces.jsonl
 SECONDS ?= 6
 NAME    ?= my-question
 
-.PHONY: help setup models budget fixtures record bench tuned sweep clips live viewer charts test clean
+.PHONY: help setup models budget fixtures record bench tuned sweep clips devices live viewer charts test clean
 
 help:
 	@grep -E '^#   ' Makefile | sed 's/^#   //'
@@ -58,6 +59,10 @@ sweep: ## sweep the VAD silence timeout and show what it costs
 
 clips: ## record the cold-open audio for both builds
 	uv run python clips.py --fixture $(FIXTURE)
+
+devices: ## list microphones, so you can pick the right one
+	@uv run python -c "import factory; [print(('  * ' if d['default'] else '    ')+f\"[{d['index']}] {d['name']}\") for d in factory.list_input_devices()]"
+	@echo "  * = system default.  Choose another: VOICE_AUDIO_DEVICE=5 make live"
 
 live: ## talk to the agent and watch the stages light up
 	@# A live conversation wants responsiveness, not the benchmark's accuracy.

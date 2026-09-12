@@ -34,6 +34,15 @@ class Config:
     # Pipecat's default is 0.2s. Measured fixture pauses exceed that, so the
     # default splits an utterance mid-sentence. See sweep.py.
     vad_stop_secs: float = 0.5
+    # Pipecat's default is 0.6, which assumes a hot signal. Laptop and USB mics
+    # vary enormously, and a gate the microphone never reaches looks exactly
+    # like a broken pipeline: the page sits at "Listening" forever. The live UI
+    # shows an input meter so this is visible rather than guessed at.
+    vad_min_volume: float = 0.3
+    # Which input device. None means the system default. `make devices` lists
+    # them; on a machine with virtual audio (Elgato, Loopback) the default is
+    # often not the microphone you are actually talking into.
+    audio_device: int | None = None
     # How much generated silence follows the utterance. The detector needs
     # silence to decide the turn is over; without it nothing ever fires.
     trailing_silence_s: float = 3.0
@@ -92,9 +101,23 @@ class Config:
     llm_temperature: float = 0.0
     llm_seed: int = 42
     llm_max_tokens: int = 60
+    # A scenario, not a general assistant. The demo is a library information
+    # line: it gives the pipeline a bounded job, makes replies short and
+    # predictable, and keeps reply length stable across runs, which matters
+    # because reply length drives the text-to-speech stage.
     system_prompt: str = (
-        "You are a voice assistant. Answer in two or three short spoken "
-        "sentences. No emojis, no lists, no formatting."
+        "You are the automated information line for Riverside Public Library. "
+        "You answer ONLY questions about this library: opening hours, borrowing "
+        "and returns, renewals, fines, library cards, rooms, events, and how to "
+        "find a book. "
+        "If asked anything else, say one short sentence: you can only help with "
+        "library questions. Do not answer it. "
+        "Facts you know: open 9am to 8pm Monday to Friday, 10am to 6pm Saturday, "
+        "12pm to 5pm Sunday. Loans last three weeks and renew twice online. "
+        "Fines are 10 cents a day, capped at 5 dollars. A library card is free "
+        "with proof of address. Study rooms are bookable two weeks ahead. "
+        "Answer in one or two short spoken sentences. Never use lists, emojis or "
+        "formatting. You are being read aloud."
     )
 
     # --- benchmark ---
