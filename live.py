@@ -1,16 +1,21 @@
-"""Talk to the agent and watch the stages light up.
+"""Talk to the agent and watch the latency arrive.
 
     make live          # then open http://localhost:8080
 
 Click Start, speak into your machine's microphone, and the reply plays through
-its speakers. The browser shows the request moving through the pipeline as it
-happens: voice activity detected, your turn ends, audio becomes text, text
-becomes a reply, the reply becomes audio.
+its speakers. The page draws the turn as a waterfall: what ran, when it started,
+how long it took, and what overlapped what.
 
-This is the observability piece, not a benchmark. There is no comparison here
-and no second build. One pipeline, the same one `bench.py` measures, with the
-components `factory.py` gives it. Swap a component and this page shows the new
-shape.
+EVERYTHING ON THAT PAGE IS THE TRACE. The bars are OpenTelemetry spans, streamed
+to the browser as Pipecat emits them, positioned by their real start and end
+timestamps. They are the same spans `budget.py` reads from
+`artifacts/live-traces.jsonl` when the run is over, so the page and the budget
+cannot disagree -- there is only one measurement. This page used to map pipeline
+frames to bars itself, which was a second implementation of "what happened and
+when", and every bug in it came from the two drifting apart.
+
+Two things here are deliberately NOT spans, because they are not timing:
+the input level meter, and the reply text as it is generated.
 
 The microphone is the one attached to this machine, not the browser's. That
 keeps the whole thing to a local pipeline plus a page of events, with no WebRTC
@@ -22,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from functools import partial
 from pathlib import Path
 
 from aiohttp import web
@@ -29,28 +35,40 @@ from loguru import logger
 from pipecat.audio.volume import AudioVolumeTracker
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 
+import agent
+import budget
 import factory
 from config import CONFIG
+from tracing_setup import init_tracing
+
+UI = Path(__file__).parent / "ui"
+TRACES = Path("artifacts/live-traces.jsonl")
+
+# The page draws the stages budget.py reports, under the names budget.py uses.
+# Importing them rather than restating them is what keeps the live view and the
+# printed budget describing the same four things.
+DRAWN = set(budget.STAGES) | {budget.WINDOW}
 
 # One queue PER connected browser. A single shared asyncio.Queue is consumed
 # rather than broadcast, so with two tabs open each event would reach only one
 # of them and both views would be wrong in different ways.
 CLIENTS: list[asyncio.Queue] = []
-LAST_READY: dict | None = None
+LOOP: asyncio.AbstractEventLoop | None = None
 RUNNING = False
 RUNNER = None      # the WorkerRunner, so Stop can cancel it
 TASK: asyncio.Task | None = None   # the task running it, so shutdown can join it
 SHUTDOWN: asyncio.Event | None = None  # set on ctrl+c, releases the SSE loops
 
 
-def emit(kind: str, stage: str = "", text: str = "", ms: float | None = None):
-    """Fan one event out to every connected browser."""
-    global LAST_READY
-    ev = {"kind": kind, "stage": stage, "text": text, "ms": ms, "t": time.time()}
-    if kind == "ready":
-        # Replayed to anyone who connects later, so a tab opened after the
-        # pipeline started still learns which stack is running.
-        LAST_READY = ev
+def emit(kind: str, **fields):
+    """Fan one event out to every connected browser.
+
+    Every event carries the server's wall clock. Spans are stamped in absolute
+    wall-clock nanoseconds, and the browser has no other way to know where
+    "now" falls on that axis, so it cannot animate a bar that is still running
+    without this.
+    """
+    ev = {"kind": kind, "now_ns": time.time_ns(), **fields}
     for q in list(CLIENTS):
         try:
             q.put_nowait(ev)
@@ -58,63 +76,64 @@ def emit(kind: str, stage: str = "", text: str = "", ms: float | None = None):
             pass
 
 
-class StageObserver(BaseObserver):
-    """Turn pipeline frames into the events the page draws.
+def hello() -> dict:
+    """What a browser needs on connect, whenever it happens to connect."""
+    return {
+        "kind": "hello",
+        "now_ns": time.time_ns(),
+        "stack": factory.describe(),
+        "gate": CONFIG.vad_min_volume,
+        "budget_ms": budget.BUDGET_MS,
+        "stages": budget.STAGES,
+        "window": budget.WINDOW,
+        "traces": str(TRACES),
+        "running": RUNNING,
+    }
 
-    Subclasses BaseObserver directly and deliberately. Mixing it in behind
-    BaseObserver (`class Obs(BaseObserver, StageObserver)`) put BaseObserver
-    first in the MRO, so ITS no-op on_push_frame won and this class never ran.
-    The pipeline looked healthy and the page sat at "Listening" forever with an
-    empty trace, because nothing was ever observed.
 
-    Deliberately a thin translation layer: it reports what Pipecat already
-    announces rather than timing anything itself. The authoritative numbers come
-    from the OpenTelemetry spans that `budget.py` reads; this is the live view.
+def on_span(kind: str, span: dict):
+    """A span started or ended. Send it, from whichever thread produced it.
+
+    Span callbacks run wherever the work finished, which for a local model is a
+    worker thread, not the event loop. Touching the client queues directly from
+    there is a data race; this hands the event over instead.
+    """
+    if span["name"] not in DRAWN or LOOP is None:
+        return
+    try:
+        LOOP.call_soon_threadsafe(partial(emit, kind, span=span))
+    except RuntimeError:
+        pass       # loop already closed: shutting down
+
+
+class PageObserver(BaseObserver):
+    """The two things on the page that are not timing.
+
+    Deliberately small, and deliberately NOT a source of any number. Everything
+    with a millisecond on it comes from the spans. This reports the input level
+    and the reply text, neither of which any span carries.
+
+    Subclasses BaseObserver DIRECTLY. Mixing it in behind BaseObserver puts
+    BaseObserver first in the MRO, so its no-op `on_push_frame` wins and this
+    never runs: the pipeline links, reports ready, and observes nothing. That
+    silently disabled this whole page once.
     """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._t0 = None
-        self._seen = set()
-        self._open: dict[str, float] = {}   # stage -> ms offset it began at
         self._lvl_at = 0.0                  # throttle for the input meter
         self._vol = AudioVolumeTracker()    # the same metric the VAD gates on
 
-    def _ms(self, now):
-        return (now - self._t0) * 1000 if self._t0 else 0.0
-
-    def _begin(self, stage, text, now):
-        """A stage started. The page grows its bar from here until it ends."""
-        self._open[stage] = self._ms(now)
-        emit("begin", stage, text, self._open[stage])
-
-    def _end(self, stage, text, now):
-        """A stage finished. Freeze the bar at its real width."""
-        start = self._open.pop(stage, self._ms(now))
-        EV = {"kind": "end", "stage": stage, "text": text,
-              "ms": self._ms(now), "start_ms": start, "t": time.time()}
-        for q in list(CLIENTS):
-            try:
-                q.put_nowait(EV)
-            except asyncio.QueueFull:
-                pass
-
     async def on_push_frame(self, data: FramePushed):
         from pipecat.frames.frames import (
-            BotStartedSpeakingFrame,
             BotStoppedSpeakingFrame,
-            LLMFullResponseEndFrame,
+            InputAudioRawFrame,
             LLMTextFrame,
             TranscriptionFrame,
-            TTSAudioRawFrame,
             UserStartedSpeakingFrame,
-            UserStoppedSpeakingFrame,
         )
 
-        from pipecat.frames.frames import InputAudioRawFrame
-
         f = data.frame
-        now = time.monotonic()
 
         # Input level, ~10/s. Without this a silent pipeline is indistinguishable
         # from a wrong microphone or a VAD gate the signal never reaches, which
@@ -125,64 +144,30 @@ class StageObserver(BaseObserver):
             # the meter and the gate marker on the page are the same scale and
             # "am I loud enough?" is answerable by looking.
             self._vol.update(f.audio, f.sample_rate)
+            now = time.monotonic()
             if now - self._lvl_at > 0.1:
                 self._lvl_at = now
-                emit("level", "", "", self._vol.volume)
+                emit("level", v=self._vol.volume)
             return
 
         if isinstance(f, UserStartedSpeakingFrame):
-            self._t0 = now
-            self._seen.clear()
-            self._open.clear()
-            emit("reset")
-            self._begin("vad", "hearing you", now)
-        elif isinstance(f, UserStoppedSpeakingFrame):
-            self._end("vad", "you stopped; waiting to be sure", now)
-            self._begin("stt", "transcribing", now)
+            emit("turn_start")
         elif isinstance(f, TranscriptionFrame) and f.text:
-            self._end("stt", f.text, now)
-            self._begin("llm", "thinking", now)
+            emit("heard", text=f.text)
         elif isinstance(f, LLMTextFrame) and f.text:
-            if "llm_first" not in self._seen:
-                self._seen.add("llm_first")
-                # First token is the number that matters for the LLM stage.
-                emit("first", "llm", f.text, self._ms(now))
-            else:
-                emit("token", "llm", f.text)
-        elif isinstance(f, LLMFullResponseEndFrame):
-            self._end("llm", "", now)
-        elif isinstance(f, TTSAudioRawFrame):
-            if "tts_first" not in self._seen:
-                self._seen.add("tts_first")
-                if "tts" not in self._open:
-                    self._begin("tts", "speaking", now)
-                emit("first", "tts", "first audio out", self._ms(now))
-        elif isinstance(f, BotStartedSpeakingFrame):
-            if "tts" not in self._open:
-                self._begin("tts", "speaking", now)
+            emit("token", text=f.text)
         elif isinstance(f, BotStoppedSpeakingFrame):
-            self._end("tts", "", now)
-            emit("turn_complete", text=f"{self._ms(now):.0f}")
+            emit("turn_done")
 
 
 async def run_agent():
     """One live conversation, using this machine's microphone and speakers."""
-    global RUNNING
+    global RUNNING, RUNNER
 
-    from pipecat.pipeline.pipeline import Pipeline
-    from pipecat.pipeline.worker import PipelineParams, PipelineWorker
-    from pipecat.processors.aggregators.llm_context import LLMContext
-    from pipecat.processors.aggregators.llm_response_universal import (
-        LLMContextAggregatorPair,
-        LLMUserAggregatorParams,
-    )
     from pipecat.transports.local.audio import (
         LocalAudioTransport,
         LocalAudioTransportParams,
     )
-    from pipecat.turns.user_mute import AlwaysUserMuteStrategy
-    from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
-    from pipecat.turns.user_turn_strategies import UserTurnStrategies
     from pipecat.workers.runner import WorkerRunner
 
     transport = LocalAudioTransport(
@@ -199,50 +184,21 @@ async def run_agent():
     name = next((d["name"] for d in devs
                  if d["index"] == cur or (cur is None and d["default"])), "?")
     logger.info(f"microphone: [{cur if cur is not None else 'default'}] {name}")
-    emit("devices", text=json.dumps({"current": cur, "devices": devs, "name": name}))
+    emit("devices", devices=devs, current=cur, name=name)
 
-    stt, llm, tts = factory.make_stt(), factory.make_llm(), factory.make_tts()
-    context = LLMContext()
-    user_agg, assistant_agg = LLMContextAggregatorPair(
-        context,
-        user_params=LLMUserAggregatorParams(
-            vad_analyzer=factory.make_vad(),
-            user_turn_strategies=UserTurnStrategies(
-                stop=[SpeechTimeoutUserTurnStopStrategy(
-                    user_speech_timeout=CONFIG.user_speech_timeout,
-                    wait_for_transcript=CONFIG.wait_for_transcript,
-                )]
-            ),
-            # THE ECHO FIX. Microphone and speakers are the same machine and
-            # there is no acoustic echo cancellation, so without this the bot
-            # hears its own voice, VAD treats it as you speaking, the reply is
-            # interrupted mid-sentence, and the bot's own words get transcribed
-            # back in as your next question. Observed in a real session: the
-            # context filled with the bot answering itself about Die Hard.
-            #
-            # Muting input while the bot speaks also fixes a second symptom.
-            # An interrupted assistant turn never commits to the context, so
-            # every message accumulated as role=user and the conversation had
-            # no assistant side at all.
-            user_mute_strategies=[AlwaysUserMuteStrategy()],
-        ),
-    )
+    # The pipeline is agent.py's, not a second copy of it. A live turn and a
+    # WAV turn go through exactly the same stages, in the same order, under the
+    # same endpointing policy.
+    pipeline = agent.build_pipeline(transport, mute_while_bot_speaks=True)
+    worker = agent.build_worker(pipeline, mode="live",
+                                conversation_id=f"live-{int(time.time())}",
+                                observers=[PageObserver()])
 
-    pipeline = Pipeline([
-        transport.input(), stt, user_agg, llm, tts,
-        transport.output(), assistant_agg,
-    ])
-    worker = PipelineWorker(
-        pipeline,
-        params=PipelineParams(enable_metrics=True),
-        observers=[StageObserver()],
-    )
-    global RUNNER
     runner = WorkerRunner(handle_sigint=False)
     RUNNER = runner
     await runner.add_workers(worker)
 
-    emit("ready", text=factory.describe())
+    emit("ready", stack=factory.describe())
     try:
         await runner.run()
     except asyncio.CancelledError:
@@ -269,8 +225,7 @@ async def sse(request):
     CLIENTS.append(q)
     stopping = asyncio.ensure_future(SHUTDOWN.wait())
     try:
-        if LAST_READY:
-            await resp.write(f"data: {json.dumps(LAST_READY)}\n\n".encode())
+        await resp.write(f"data: {json.dumps(hello())}\n\n".encode())
         while not SHUTDOWN.is_set():
             nxt = asyncio.ensure_future(q.get())
             done, _ = await asyncio.wait(
@@ -322,230 +277,7 @@ async def stop(request):
 
 
 async def index(request):
-    # The gate marker must track the real setting, or the meter lies.
-    return web.Response(text=PAGE.replace("__GATE__", str(CONFIG.vad_min_volume)),
-                        content_type="text/html")
-
-
-PAGE = """<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<title>Voice agent · live trace</title>
-<style>
-*{box-sizing:border-box}
-:root{
-  --bg:#0d0f12; --panel:#14171c; --line:#1e232a; --line2:#262c34;
-  --ink:#e8eaed; --dim:#7d858f; --faint:#4a515b;
-  --run:#5ac8fa; --ok:#3ddc97; --red:#ff5f56;
-  --gut:190px;
-}
-body{margin:0;padding:32px 26px 60px;background:var(--bg);color:var(--ink);
- font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
-main{max-width:1000px;margin:0 auto}
-header{display:flex;align-items:baseline;gap:14px;margin-bottom:3px}
-h1{font-size:16px;font-weight:600;margin:0;letter-spacing:-.2px}
-.stack{color:var(--faint);font-size:11px;margin:0 0 22px;
- white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-.bar-top{display:flex;align-items:center;gap:9px;margin-bottom:18px}
-button{font:inherit;font-size:12px;padding:7px 15px;border-radius:6px;cursor:pointer;
- border:1px solid var(--line2);background:var(--panel);color:var(--ink)}
-button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-button:disabled{opacity:.3;cursor:default}
-.spacer{flex:1}
-.clock{text-align:right;line-height:1.1}
-.clock .n{font-size:22px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
-.clock .l{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px}
-
-.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);
- margin-bottom:20px;min-height:17px}
-.status .led{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
-.status.live .led{background:var(--ok);box-shadow:0 0 0 3px rgba(61,220,151,.15)}
-.status.busy .led{background:var(--run);animation:bl 1s infinite}
-.status.bad{color:var(--red)} .status.bad .led{background:var(--red)}
-@keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
-
-.mic{display:flex;align-items:center;gap:10px;margin:-8px 0 18px}
-.ml{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px;width:46px}
-.meter{position:relative;flex:0 0 220px;height:7px;background:var(--line);border-radius:4px;
- overflow:hidden}
-.meter>div{height:100%;width:0;background:var(--run);transition:width .08s linear}
-.meter .gate{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--red);
- opacity:.8;transition:none}
-.mn{font-size:10.5px;color:var(--faint)}
-.trace{background:var(--panel);border:1px solid var(--line);border-radius:9px;
- padding:0 0 6px;overflow:hidden}
-.ticks{position:relative;height:26px;margin-left:var(--gut);
- border-bottom:1px solid var(--line2)}
-.tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
-.tick span{position:absolute;top:6px;left:5px;font-size:10px;color:var(--faint);
- font-variant-numeric:tabular-nums;white-space:nowrap}
-.unit{position:absolute;right:8px;top:6px;font-size:10px;color:var(--faint)}
-.mark{position:absolute;top:0;bottom:-999px;border-left:1px dashed var(--red);
- opacity:.5;z-index:1}
-.mark span{position:absolute;top:6px;left:5px;font-size:10px;color:var(--red)}
-.head{position:absolute;top:0;bottom:-999px;width:1px;background:var(--run);
- box-shadow:0 0 7px 1px rgba(90,200,250,.5);z-index:3;display:none}
-.head::after{content:"";position:absolute;top:-1px;left:-3px;width:7px;height:7px;
- border-radius:50%;background:var(--run)}
-
-.row{position:relative;display:flex;align-items:stretch;min-height:34px;
- border-bottom:1px solid var(--line)}
-.row:last-of-type{border-bottom:0}
-.gut{width:var(--gut);flex:none;padding:8px 14px 8px 16px;border-right:1px solid var(--line2)}
-.gut b{display:block;font-size:12px;font-weight:500;color:var(--faint);letter-spacing:-.1px}
-.gut i{font-style:normal;font-size:10px;color:var(--faint);opacity:.65}
-.row.run .gut b{color:var(--ink)} .row.ok .gut b{color:var(--dim)}
-.lane{position:relative;flex:1}
-.span{position:absolute;top:9px;height:16px;border-radius:3px;min-width:3px;
- background:var(--faint);transition:opacity .2s}
-.row.run .span{background:var(--run)}
-.row.ok  .span{background:var(--ok);opacity:.8}
-.dur{position:absolute;top:11px;font-size:10.5px;color:var(--dim);white-space:nowrap;
- font-variant-numeric:tabular-nums}
-.note{padding:0 16px 9px calc(var(--gut) + 14px);font-size:11px;color:var(--dim);
- white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:-4px}
-.note:empty{display:none}
-
-footer{margin-top:18px;color:var(--faint);font-size:11px;line-height:1.8}
-code{color:var(--dim)}
-</style></head><body><main>
-
-<header><h1>Voice agent</h1><span style="color:var(--faint);font-size:11px">live trace</span></header>
-<p class="stack" id="stack">&nbsp;</p>
-
-<div class="bar-top">
-  <button id="go" class="primary">Start listening</button>
-  <button id="halt" disabled>Stop</button>
-  <div class="spacer"></div>
-  <div class="clock"><div class="l" id="tlab">elapsed</div><div class="n" id="total">—</div></div>
-</div>
-
-<div class="status" id="st"><span class="led"></span><span id="stx">Idle. Use headphones, or the agent hears itself.</span></div>
-<div class="mic"><span class="ml">input</span><div class="meter"><div id="lvl"></div>
-  <div class="gate" id="gate"></div></div><span class="mn" id="mic">—</span></div>
-
-<div class="trace">
-  <div class="ticks" id="ticks"><span class="unit">ms</span>
-    <div class="mark" id="mark"><span>800</span></div>
-    <div class="head" id="head"></div></div>
-
-  <div class="row" id="r-vad"><div class="gut"><b>Voice activity</b><i>are you still talking?</i></div>
-    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
-  <div class="note" id="n-vad"></div>
-
-  <div class="row" id="r-stt"><div class="gut"><b>Speech to text</b><i>audio becomes words</i></div>
-    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
-  <div class="note" id="n-stt"></div>
-
-  <div class="row" id="r-llm"><div class="gut"><b>Language model</b><i>words become a reply</i></div>
-    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
-  <div class="note" id="n-llm"></div>
-
-  <div class="row" id="r-tts"><div class="gut"><b>Text to speech</b><i>the reply becomes audio</i></div>
-    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
-  <div class="note" id="n-tts"></div>
-</div>
-
-<footer>
-Spans start where the stage started and grow while it runs. Two spans covering
-the same slice of the axis ran at the same time.<br>
-Dashed red is 800&nbsp;ms, roughly what human turn-taking costs. Live view; the
-authoritative numbers come from the OpenTelemetry spans <code>budget.py</code> reads.<br>
-Swap a component: <code>VOICE_TTS_ENGINE=piper make live</code>
-</footer>
-</main>
-<script>
-const $=i=>document.getElementById(i), S=["vad","stt","llm","tts"];
-let scale=2000, open={}, t0=null, frozen=null;
-const GATE=__GATE__;   // CONFIG.vad_min_volume: below this the VAD ignores you
-
-function ticks(){
-  const box=$("ticks"), keep=[$("mark"),$("head"),box.querySelector(".unit")];
-  [...box.children].forEach(c=>{ if(!keep.includes(c)) c.remove(); });
-  const step = scale<=2000?250 : scale<=5000?500 : 1000;
-  for(let ms=0; ms<=scale; ms+=step){
-    const d=document.createElement("div"); d.className="tick";
-    d.style.left=(ms/scale*100)+"%";
-    d.innerHTML='<span>'+ms+'</span>'; box.appendChild(d);
-  }
-  $("mark").style.left=Math.min(100, 800/scale*100)+"%";
-}
-function rescale(ms){
-  const want=Math.max(2000, Math.ceil(ms*1.12/500)*500);
-  if(want!==scale){ scale=want; ticks(); S.forEach(redraw); }
-}
-function redraw(s){
-  const r=$("r-"+s), sp=r.querySelector(".span"), du=r.querySelector(".dur");
-  const a=+sp.dataset.a, b=+sp.dataset.b;
-  if(isNaN(a)){ sp.style.width="0"; du.textContent=""; return; }
-  const L=a/scale*100, W=Math.max((b-a)/scale*100, .35);
-  sp.style.left=L+"%"; sp.style.width=W+"%";
-  du.textContent=Math.round(b-a)+" ms";
-  du.style.left=Math.min(L+W+1, 88)+"%";
-}
-function reset(){
-  open={}; frozen=null; t0=performance.now(); scale=2000; ticks();
-  S.forEach(s=>{ const r=$("r-"+s), sp=r.querySelector(".span");
-    r.className="row"; delete sp.dataset.a; delete sp.dataset.b;
-    redraw(s); $("n-"+s).textContent=""; });
-}
-function status(t,cls){ $("stx").textContent=t; $("st").className="status "+(cls||""); }
-
-(function loop(){
-  if(t0!==null){
-    const now=performance.now()-t0;
-    rescale(now);
-    $("total").textContent=Math.round(now).toLocaleString()+" ms";
-    $("head").style.left=Math.min(now/scale*100,100)+"%";
-    for(const s in open){ const sp=$("r-"+s).querySelector(".span");
-      sp.dataset.b=now; redraw(s); }
-  }
-  requestAnimationFrame(loop);
-})();
-ticks();
-$("gate").style.left=(GATE*100)+"%";
-
-$("go").onclick=async()=>{ $("go").disabled=true; reset(); t0=null;
-  $("total").textContent="—";
-  status("Loading models. First run downloads and warms them; nothing is listening yet.","busy");
-  const r=await(await fetch("/start",{method:"POST"})).json();
-  if(!r.ok){ status(r.error,"bad"); $("go").disabled=false; } };
-$("halt").onclick=async()=>{ $("halt").disabled=true; status("Stopping…","busy");
-  await fetch("/stop",{method:"POST"}); };
-
-new EventSource("/events").onmessage=m=>{
-  const e=JSON.parse(m.data);
-  if(e.kind==="level"){ const v=Math.max(0,Math.min(1,e.ms||0));
-    $("lvl").style.width=(v*100)+"%";
-    $("lvl").style.background = v >= GATE ? "var(--ok)" : "var(--run)";
-    $("mic").dataset.v = v.toFixed(2);
-    return; }
-  if(e.kind==="devices"){ const d=JSON.parse(e.text);
-    $("mic").textContent=d.name+(d.current===null?" (default)":"");
-    return; }
-  if(e.kind==="ready"){ $("stack").textContent=e.text; $("halt").disabled=false;
-    status("Listening. Say something.","live"); return; }
-  if(e.kind==="error"){ status(e.text,"bad"); return; }
-  if(e.kind==="stopped"){ $("go").disabled=false; $("halt").disabled=true;
-    t0=null; open={}; $("head").style.display="none"; status("Stopped."); return; }
-  if(e.kind==="reset"){ reset(); $("head").style.display="block";
-    status("Hearing you.","busy"); return; }
-  if(e.kind==="turn_complete"){ open={}; t0=null; $("head").style.display="none";
-    $("tlab").textContent="this turn"; $("total").textContent=(+e.text).toLocaleString()+" ms";
-    status("Listening. Say something.","live"); return; }
-
-  const r=$("r-"+e.stage); if(!r) return;
-  const sp=r.querySelector(".span");
-  if(e.kind==="begin"){ open[e.stage]=e.ms; r.className="row run";
-    sp.dataset.a=e.ms; sp.dataset.b=e.ms; redraw(e.stage);
-    if(e.text) $("n-"+e.stage).textContent=e.text; }
-  if(e.kind==="first"){ if(e.text) $("n-"+e.stage).textContent=e.text; }
-  if(e.kind==="token"){ $("n-"+e.stage).textContent+=e.text; }
-  if(e.kind==="end"){ delete open[e.stage]; r.className="row ok";
-    sp.dataset.a=e.start_ms; sp.dataset.b=e.ms; redraw(e.stage);
-    if(e.text) $("n-"+e.stage).textContent=e.text; }
-};
-</script></body></html>"""
+    return web.FileResponse(UI / "index.html")
 
 
 async def release_clients(app):
@@ -593,17 +325,27 @@ def main():
     args = ap.parse_args()
 
     async def boot(app):
-        global SHUTDOWN
+        global SHUTDOWN, LOOP
         SHUTDOWN = asyncio.Event()
+        LOOP = asyncio.get_running_loop()
+
+    # Truncated per run. Spans append, and a file holding four sessions makes
+    # `budget.py --traces` report a median across conversations you have
+    # forgotten having.
+    TRACES.unlink(missing_ok=True)
+    ok, _ = init_tracing("voice-live", TRACES, live_callback=on_span)
 
     app = web.Application()
     app.on_startup.append(boot)
     app.on_shutdown.append(release_clients)
     app.on_cleanup.append(shutdown)
     app.add_routes([web.get("/", index), web.get("/events", sse),
-                    web.post("/start", start), web.post("/stop", stop)])
+                    web.post("/start", start), web.post("/stop", stop),
+                    web.static("/ui", UI)])
     logger.info(f"open http://localhost:{args.port}")
     logger.info(f"stack: {factory.describe()}")
+    logger.info(f"tracing: {ok}, spans -> {TRACES}")
+    logger.info(f"afterwards: uv run python budget.py --traces {TRACES}")
     logger.info("ctrl+c to quit")
     from aiohttp.web_runner import GracefulExit
 
