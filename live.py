@@ -305,197 +305,201 @@ async def index(request):
 
 PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>Voice agent, under the hood</title>
+<title>Voice agent · live trace</title>
 <style>
-:root{color-scheme:light}
-body{margin:0;padding:40px 28px;background:#fbfbfa;color:#1a1a18;
- font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-main{max-width:880px;margin:0 auto}
-h1{font-size:21px;margin:0 0 4px}
-p.sub{margin:0 0 8px;color:#78756e}
-p.stack{margin:0 0 26px;color:#a8a49b;font-size:12px}
-.ctl{display:flex;gap:10px;align-items:center}
-button{font:inherit;padding:11px 22px;border:1px solid #1a1a18;border-radius:8px;
- background:#1a1a18;color:#fff;cursor:pointer}
-button.ghost{background:#fff;color:#1a1a18}
-button:disabled{opacity:.35;cursor:default}
-.total{margin-left:auto;font-size:26px;letter-spacing:-.5px;color:#1a1a18}
-.total span{font-size:13px;color:#a8a49b;letter-spacing:0}
-.hint{margin:14px 0 26px;color:#78756e;font-size:13px;min-height:20px}
-.hint b{color:#1a1a18}
-.err{color:#b91c1c}
+*{box-sizing:border-box}
+:root{
+  --bg:#0d0f12; --panel:#14171c; --line:#1e232a; --line2:#262c34;
+  --ink:#e8eaed; --dim:#7d858f; --faint:#4a515b;
+  --run:#5ac8fa; --ok:#3ddc97; --red:#ff5f56;
+  --gut:190px;
+}
+body{margin:0;padding:32px 26px 60px;background:var(--bg);color:var(--ink);
+ font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+main{max-width:1000px;margin:0 auto}
+header{display:flex;align-items:baseline;gap:14px;margin-bottom:3px}
+h1{font-size:16px;font-weight:600;margin:0;letter-spacing:-.2px}
+.stack{color:var(--faint);font-size:11px;margin:0 0 22px;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.axis{position:relative;height:15px;margin:0 0 2px 176px;border-bottom:1px solid #eceae5}
-.axis .dl{position:absolute;top:0;bottom:0;width:2px;background:#dc2626}
-.axis .dlv{position:absolute;top:-2px;font-size:10px;color:#dc2626;
- transform:translateX(-100%);padding-right:5px;white-space:nowrap}
+.bar-top{display:flex;align-items:center;gap:9px;margin-bottom:18px}
+button{font:inherit;font-size:12px;padding:7px 15px;border-radius:6px;cursor:pointer;
+ border:1px solid var(--line2);background:var(--panel);color:var(--ink)}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:disabled{opacity:.3;cursor:default}
+.spacer{flex:1}
+.clock{text-align:right;line-height:1.1}
+.clock .n{font-size:22px;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+.clock .l{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px}
 
-.stage{display:grid;grid-template-columns:12px 150px 1fr 70px;gap:14px;
- align-items:center;padding:11px 0;border-bottom:1px solid #f2f0ec}
-.dot{width:9px;height:9px;border-radius:50%;background:#dcd9d2;transition:background .15s}
-.stage.run .dot{background:#1a1a18;animation:pulse 1s infinite}
-.stage.ok .dot{background:#3f8f5f}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
-.name b{display:block;font-size:12.5px;color:#a8a49b}
-.name i{font-style:normal;color:#c4c0b7;font-size:10.5px}
-.stage.run .name b,.stage.ok .name b{color:#1a1a18}
-.track{position:relative;height:22px;background:#f4f3f0;border-radius:3px;overflow:hidden}
-.bar{position:absolute;top:0;height:22px;border-radius:3px;border:1px solid #2b2a27;
- box-sizing:border-box;width:0}
-.stage.run .bar{border-style:dashed}
-.ms{text-align:right;font-size:12.5px;color:#c4c0b7;font-variant-numeric:tabular-nums}
-.stage.run .ms{color:#1a1a18}
-.stage.ok .ms{color:#3f8f5f}
-.say{margin:3px 0 0 176px;color:#6b6862;font-size:12px;min-height:16px;
- overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-footer{margin-top:30px;color:#a8a49b;font-size:12px;line-height:1.75}
-code{background:#f1efea;padding:1px 5px;border-radius:3px}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);
+ margin-bottom:20px;min-height:17px}
+.status .led{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+.status.live .led{background:var(--ok);box-shadow:0 0 0 3px rgba(61,220,151,.15)}
+.status.busy .led{background:var(--run);animation:bl 1s infinite}
+.status.bad{color:var(--red)} .status.bad .led{background:var(--red)}
+@keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
+
+.trace{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+ padding:0 0 6px;overflow:hidden}
+.ticks{position:relative;height:26px;margin-left:var(--gut);
+ border-bottom:1px solid var(--line2)}
+.tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
+.tick span{position:absolute;top:6px;left:5px;font-size:10px;color:var(--faint);
+ font-variant-numeric:tabular-nums;white-space:nowrap}
+.unit{position:absolute;right:8px;top:6px;font-size:10px;color:var(--faint)}
+.mark{position:absolute;top:0;bottom:-999px;border-left:1px dashed var(--red);
+ opacity:.5;z-index:1}
+.mark span{position:absolute;top:6px;left:5px;font-size:10px;color:var(--red)}
+.head{position:absolute;top:0;bottom:-999px;width:1px;background:var(--run);
+ box-shadow:0 0 7px 1px rgba(90,200,250,.5);z-index:3;display:none}
+.head::after{content:"";position:absolute;top:-1px;left:-3px;width:7px;height:7px;
+ border-radius:50%;background:var(--run)}
+
+.row{position:relative;display:flex;align-items:stretch;min-height:34px;
+ border-bottom:1px solid var(--line)}
+.row:last-of-type{border-bottom:0}
+.gut{width:var(--gut);flex:none;padding:8px 14px 8px 16px;border-right:1px solid var(--line2)}
+.gut b{display:block;font-size:12px;font-weight:500;color:var(--faint);letter-spacing:-.1px}
+.gut i{font-style:normal;font-size:10px;color:var(--faint);opacity:.65}
+.row.run .gut b{color:var(--ink)} .row.ok .gut b{color:var(--dim)}
+.lane{position:relative;flex:1}
+.span{position:absolute;top:9px;height:16px;border-radius:3px;min-width:3px;
+ background:var(--faint);transition:opacity .2s}
+.row.run .span{background:var(--run)}
+.row.ok  .span{background:var(--ok);opacity:.8}
+.dur{position:absolute;top:11px;font-size:10.5px;color:var(--dim);white-space:nowrap;
+ font-variant-numeric:tabular-nums}
+.note{padding:0 16px 9px calc(var(--gut) + 14px);font-size:11px;color:var(--dim);
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:-4px}
+.note:empty{display:none}
+
+footer{margin-top:18px;color:var(--faint);font-size:11px;line-height:1.8}
+code{color:var(--dim)}
 </style></head><body><main>
-<h1>Voice agent, under the hood</h1>
-<p class="sub">Press start, then talk to your machine. Watch where the time goes.</p>
-<p class="stack" id="stack"></p>
 
-<div class="ctl">
-  <button id="go">Start listening</button>
-  <button id="halt" class="ghost" disabled>Stop</button>
-  <div class="total"><span id="tlab">since you stopped speaking</span>
-    <div id="total">0 ms</div></div>
+<header><h1>Voice agent</h1><span style="color:var(--faint);font-size:11px">live trace</span></header>
+<p class="stack" id="stack">&nbsp;</p>
+
+<div class="bar-top">
+  <button id="go" class="primary">Start listening</button>
+  <button id="halt" disabled>Stop</button>
+  <div class="spacer"></div>
+  <div class="clock"><div class="l" id="tlab">elapsed</div><div class="n" id="total">—</div></div>
 </div>
-<p class="hint" id="hint">Uses this machine's microphone and speakers.
-<b>Wear headphones</b> — otherwise the agent hears itself.</p>
 
-<div class="axis" id="axis"><div class="dl" id="dl"></div>
-  <div class="dlv" id="dlv">800 ms</div></div>
+<div class="status" id="st"><span class="led"></span><span id="stx">Idle. Use headphones, or the agent hears itself.</span></div>
 
-<div id="stages">
-  <div class="stage" id="s-vad"><div class="dot"></div>
-    <div class="name"><b>Voice activity</b><i>are you still talking?</i></div>
-    <div class="track"><div class="bar" style="background:#fff"></div></div>
-    <div class="ms"></div></div>
-  <div class="say" id="say-vad"></div>
+<div class="trace">
+  <div class="ticks" id="ticks"><span class="unit">ms</span>
+    <div class="mark" id="mark"><span>800</span></div>
+    <div class="head" id="head"></div></div>
 
-  <div class="stage" id="s-stt"><div class="dot"></div>
-    <div class="name"><b>Speech to text</b><i>audio becomes words</i></div>
-    <div class="track"><div class="bar" style="background:#d9d7d1"></div></div>
-    <div class="ms"></div></div>
-  <div class="say" id="say-stt"></div>
+  <div class="row" id="r-vad"><div class="gut"><b>Voice activity</b><i>are you still talking?</i></div>
+    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
+  <div class="note" id="n-vad"></div>
 
-  <div class="stage" id="s-llm"><div class="dot"></div>
-    <div class="name"><b>Language model</b><i>words become a reply</i></div>
-    <div class="track"><div class="bar" style="background:#8d8a83"></div></div>
-    <div class="ms"></div></div>
-  <div class="say" id="say-llm"></div>
+  <div class="row" id="r-stt"><div class="gut"><b>Speech to text</b><i>audio becomes words</i></div>
+    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
+  <div class="note" id="n-stt"></div>
 
-  <div class="stage" id="s-tts"><div class="dot"></div>
-    <div class="name"><b>Text to speech</b><i>the reply becomes audio</i></div>
-    <div class="track"><div class="bar" style="background:#3f3d39"></div></div>
-    <div class="ms"></div></div>
-  <div class="say" id="say-tts"></div>
+  <div class="row" id="r-llm"><div class="gut"><b>Language model</b><i>words become a reply</i></div>
+    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
+  <div class="note" id="n-llm"></div>
+
+  <div class="row" id="r-tts"><div class="gut"><b>Text to speech</b><i>the reply becomes audio</i></div>
+    <div class="lane"><div class="span"></div><div class="dur"></div></div></div>
+  <div class="note" id="n-tts"></div>
 </div>
 
 <footer>
-Each bar starts where that stage started and grows while it runs, so bars
-overlapping vertically were running at the same time. Dashed means still going.
-The red line is 800&nbsp;ms, roughly what human turn-taking costs.<br>
-This is the live view. The authoritative per-stage numbers come from the
-OpenTelemetry spans <code>budget.py</code> reads.<br>
-Swap a component and run again: <code>VOICE_TTS_ENGINE=piper make live</code>
+Spans start where the stage started and grow while it runs. Two spans covering
+the same slice of the axis ran at the same time.<br>
+Dashed red is 800&nbsp;ms, roughly what human turn-taking costs. Live view; the
+authoritative numbers come from the OpenTelemetry spans <code>budget.py</code> reads.<br>
+Swap a component: <code>VOICE_TTS_ENGINE=piper make live</code>
 </footer>
 </main>
 <script>
-const $ = id => document.getElementById(id);
-const el = s => $("s-" + s);
-const STAGES = ["vad","stt","llm","tts"];
-let scale = 2500;          // ms across the full width, grows as a turn runs
-let open = {};             // stage -> start ms, while running
-let turn0 = null;          // wall clock when this turn began
+const $=i=>document.getElementById(i), S=["vad","stt","llm","tts"];
+let scale=2000, open={}, t0=null, frozen=null;
 
-function setScale(ms){
-  const want = Math.max(2500, Math.ceil(ms / 500) * 500 * 1.15);
-  if(want !== scale){
-    scale = want;
-    STAGES.forEach(s => { const b = el(s).querySelector(".bar");
-      if(b.dataset.start) place(s, +b.dataset.start, +(b.dataset.end || 0)); });
+function ticks(){
+  const box=$("ticks"), keep=[$("mark"),$("head"),box.querySelector(".unit")];
+  [...box.children].forEach(c=>{ if(!keep.includes(c)) c.remove(); });
+  const step = scale<=2000?250 : scale<=5000?500 : 1000;
+  for(let ms=0; ms<=scale; ms+=step){
+    const d=document.createElement("div"); d.className="tick";
+    d.style.left=(ms/scale*100)+"%";
+    d.innerHTML='<span>'+ms+'</span>'; box.appendChild(d);
   }
-  const pct = Math.min(100, 800 / scale * 100);
-  $("dl").style.left = pct + "%"; $("dlv").style.left = pct + "%";
+  $("mark").style.left=Math.min(100, 800/scale*100)+"%";
 }
-function place(s, startMs, endMs){
-  const b = el(s).querySelector(".bar");
-  b.dataset.start = startMs; if(endMs) b.dataset.end = endMs;
-  b.style.left  = (startMs / scale * 100) + "%";
-  b.style.width = (Math.max(endMs - startMs, 6) / scale * 100) + "%";
+function rescale(ms){
+  const want=Math.max(2000, Math.ceil(ms*1.12/500)*500);
+  if(want!==scale){ scale=want; ticks(); S.forEach(redraw); }
+}
+function redraw(s){
+  const r=$("r-"+s), sp=r.querySelector(".span"), du=r.querySelector(".dur");
+  const a=+sp.dataset.a, b=+sp.dataset.b;
+  if(isNaN(a)){ sp.style.width="0"; du.textContent=""; return; }
+  const L=a/scale*100, W=Math.max((b-a)/scale*100, .35);
+  sp.style.left=L+"%"; sp.style.width=W+"%";
+  du.textContent=Math.round(b-a)+" ms";
+  du.style.left=Math.min(L+W+1, 88)+"%";
 }
 function reset(){
-  open = {}; turn0 = performance.now();
-  STAGES.forEach(s => { const e = el(s); e.className = "stage";
-    const b = e.querySelector(".bar");
-    b.style.width = "0"; b.style.left = "0";
-    delete b.dataset.start; delete b.dataset.end;
-    e.querySelector(".ms").textContent = ""; $("say-"+s).textContent = ""; });
-  scale = 2500; setScale(2500); $("total").textContent = "0 ms";
+  open={}; frozen=null; t0=performance.now(); scale=2000; ticks();
+  S.forEach(s=>{ const r=$("r-"+s), sp=r.querySelector(".span");
+    r.className="row"; delete sp.dataset.a; delete sp.dataset.b;
+    redraw(s); $("n-"+s).textContent=""; });
+  $("head").style.display="block";
 }
-// Grow the running bars locally between events, so the page moves continuously
-// instead of jumping only when the pipeline happens to emit something.
-function tick(){
-  if(turn0 !== null){
-    const now = performance.now() - turn0;
-    setScale(now);
-    $("total").textContent = Math.round(now) + " ms";
-    for(const s in open){
-      place(s, open[s], now);
-      el(s).querySelector(".ms").textContent = Math.round(now - open[s]) + " ms";
-    }
-  }
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
+function status(t,cls){ $("stx").textContent=t; $("st").className="status "+(cls||""); }
 
-function hint(t, bad){ $("hint").innerHTML = t; $("hint").className = "hint" + (bad?" err":""); }
-$("go").onclick = async () => {
-  $("go").disabled = true; reset(); turn0 = null;
-  hint("Loading models… the first run downloads and warms them, which can take "
-     + "a minute. Nothing is listening yet.");
-  const r = await (await fetch("/start", {method:"POST"})).json();
-  if(!r.ok){ hint(r.error, true); $("go").disabled = false; }
-};
-$("halt").onclick = async () => {
-  $("halt").disabled = true; hint("stopping…");
-  await fetch("/stop", {method:"POST"});
-};
+(function loop(){
+  if(t0!==null){
+    const now=performance.now()-t0;
+    rescale(now);
+    $("total").textContent=Math.round(now).toLocaleString()+" ms";
+    $("head").style.left=Math.min(now/scale*100,100)+"%";
+    for(const s in open){ const sp=$("r-"+s).querySelector(".span");
+      sp.dataset.b=now; redraw(s); }
+  }
+  requestAnimationFrame(loop);
+})();
+ticks();
 
-const es = new EventSource("/events");
-es.onmessage = m => {
-  const e = JSON.parse(m.data);
-  if(e.kind === "ready"){ $("stack").textContent = e.text; $("halt").disabled = false;
-    hint("<b>Listening.</b> Say something."); return; }
-  if(e.kind === "error"){ hint(e.text, true); return; }
-  if(e.kind === "stopped"){ $("go").disabled = false; $("halt").disabled = true;
-    turn0 = null; open = {}; hint("Stopped."); return; }
-  if(e.kind === "reset"){ reset(); return; }
-  if(e.kind === "turn_complete"){ turn0 = null; open = {};
-    $("tlab").textContent = "this turn took";
-    hint("Your turn. Say something else."); return; }
+$("go").onclick=async()=>{ $("go").disabled=true; reset(); t0=null;
+  $("total").textContent="—";
+  status("Loading models. First run downloads and warms them; nothing is listening yet.","busy");
+  const r=await(await fetch("/start",{method:"POST"})).json();
+  if(!r.ok){ status(r.error,"bad"); $("go").disabled=false; } };
+$("halt").onclick=async()=>{ $("halt").disabled=true; status("Stopping…","busy");
+  await fetch("/stop",{method:"POST"}); };
 
-  const box = el(e.stage); if(!box) return;
-  if(e.kind === "begin"){
-    open[e.stage] = e.ms; box.className = "stage run";
-    place(e.stage, e.ms, e.ms + 6);
-    if(e.text) $("say-"+e.stage).textContent = e.text;
-  }
-  if(e.kind === "first"){
-    // first token / first audio byte: the number that actually matters here
-    box.querySelector(".ms").textContent = Math.round(e.ms - (open[e.stage]||0)) + " ms";
-    if(e.text) $("say-"+e.stage).textContent = e.text;
-  }
-  if(e.kind === "token"){ $("say-"+e.stage).textContent += e.text; }
-  if(e.kind === "end"){
-    delete open[e.stage];
-    box.className = "stage ok";
-    place(e.stage, e.start_ms, e.ms);
-    box.querySelector(".ms").textContent = Math.round(e.ms - e.start_ms) + " ms";
-    if(e.text) $("say-"+e.stage).textContent = e.text;
-  }
+new EventSource("/events").onmessage=m=>{
+  const e=JSON.parse(m.data);
+  if(e.kind==="ready"){ $("stack").textContent=e.text; $("halt").disabled=false;
+    status("Listening. Say something.","live"); return; }
+  if(e.kind==="error"){ status(e.text,"bad"); return; }
+  if(e.kind==="stopped"){ $("go").disabled=false; $("halt").disabled=true;
+    t0=null; open={}; $("head").style.display="none"; status("Stopped."); return; }
+  if(e.kind==="reset"){ reset(); status("Hearing you.","busy"); return; }
+  if(e.kind==="turn_complete"){ open={}; t0=null; $("head").style.display="none";
+    $("tlab").textContent="this turn"; $("total").textContent=(+e.text).toLocaleString()+" ms";
+    status("Listening. Say something.","live"); return; }
+
+  const r=$("r-"+e.stage); if(!r) return;
+  const sp=r.querySelector(".span");
+  if(e.kind==="begin"){ open[e.stage]=e.ms; r.className="row run";
+    sp.dataset.a=e.ms; sp.dataset.b=e.ms; redraw(e.stage);
+    if(e.text) $("n-"+e.stage).textContent=e.text; }
+  if(e.kind==="first"){ if(e.text) $("n-"+e.stage).textContent=e.text; }
+  if(e.kind==="token"){ $("n-"+e.stage).textContent+=e.text; }
+  if(e.kind==="end"){ delete open[e.stage]; r.className="row ok";
+    sp.dataset.a=e.start_ms; sp.dataset.b=e.ms; redraw(e.stage);
+    if(e.text) $("n-"+e.stage).textContent=e.text; }
 };
 </script></body></html>"""
 
