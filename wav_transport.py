@@ -1,8 +1,9 @@
-"""Deterministic WAV-in / captured-audio-out transport for benchmarking.
+"""Deterministic WAV-in / captured-audio-out transport, for running without a mic.
 
 Pipecat ships no file-based audio transport: `pipecat/transports/local/` has
-only PyAudio (mic/speaker) and Tk. A microphone is not repeatable, so a
-benchmark needs this.
+only PyAudio (mic/speaker) and Tk. This is how `agent.py` runs a turn on a
+machine where the microphone is awkward, and how the same utterance can be run
+twice.
 
 The critical detail is CADENCE. Silero VAD and the smart-turn model are
 time-domain models that expect ~20ms frames arriving at real-time speed with
@@ -80,9 +81,9 @@ class Capture:
     def turn_detection_wait(self) -> float | None:
         """How long the agent waited in silence before deciding you were done.
 
-        This is not compute. It is the silence timeout elapsing. On a naive
-        implementation it is routinely the largest single line in the budget,
-        and it is a config constant, not a model property.
+        This is not compute. It is the silence timeout elapsing. It is
+        routinely the largest single line in the budget, and it is a config
+        constant, not a model property.
         """
         if self.t_speech_end is None or self.t_turn_end is None:
             return None

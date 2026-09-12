@@ -1,7 +1,7 @@
-"""Pre-download every model weight the benchmark needs.
+"""Pre-download every model weight the pipeline needs.
 
-Run this once before benchmarking. Everything here is a network fetch into a
-local cache; nothing is measured. Kept separate from bench.py precisely so a
+Run this once before running anything. Everything here is a network fetch into
+a local cache; nothing is measured. Kept separate from the pipeline so a
 cold download can never land inside a timed run.
 """
 

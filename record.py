@@ -98,7 +98,7 @@ def main():
     print(f"    longest pause       {m['max_internal_pause_ms']:.0f} ms")
     print(f"    needs stop_secs >=  {m['min_workable_stop_secs']:.2f} s "
           f"(below this the agent will cut you off)")
-    print(f"\n  Now run:  make bench FIXTURE={args.name}")
+    print(f"\n  Now run:  make trace FIXTURE={args.name}")
 
 
 if __name__ == "__main__":

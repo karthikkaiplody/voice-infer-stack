@@ -5,8 +5,8 @@ Reads OpenTelemetry spans from a JSONL file. It does not import the pipeline,
 so it works on traces from this repo or from any agent that emits the span
 names in SPANS.md.
 
-    uv run python budget.py                          # committed reference traces
-    uv run python budget.py --traces mine.jsonl      # yours
+    uv run python budget.py                                   # the committed turn
+    uv run python budget.py --traces artifacts/live-traces.jsonl   # yours
 
 The number that matters is not the total. It is which stage owns it, and how
 much of the stage time is recovered by overlapping rather than by being faster.
@@ -28,8 +28,8 @@ WINDOW = "e2e.speech_end_to_first_audio"
 
 # turn_detection is a WAIT, not work. STT transcribing buffered audio while the
 # detector waits is not a scheduling win, so counting that intersection as
-# "recovered by streaming" would inflate the headline. Overlap is only claimed
-# between stages that actually compute.
+# recovered time would inflate the headline. Overlap is only claimed between
+# stages that actually compute.
 COMPUTE = ["stt", "llm", "tts"]
 BUDGET_MS = 800.0  # the human conversational window this is all measured against
 
@@ -151,7 +151,7 @@ def render(summary, label):
     print(f"  {'compute, summed':<18}{summary['sum_ms']:>9.0f}")
     for a_name, b_name, ov in summary["overlaps"]:
         print(f"  {'  overlap ' + a_name + '/' + b_name:<18}{-ov:>9.0f}"
-              f"{-ov / wall * 100:>8.0f}%   recovered by streaming")
+              f"{-ov / wall * 100:>8.0f}%   recovered by overlapping")
     print(f"  {'wall clock':<18}{wall:>9.0f}")
     print()
     over = wall / BUDGET_MS
@@ -166,15 +166,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--traces", default="artifacts/reference-traces.jsonl",
                     help="JSONL of OpenTelemetry spans (see SPANS.md)")
-    ap.add_argument("--mode", help="only this mode, e.g. naive or streaming")
+    ap.add_argument("--mode", help="only this mode, e.g. live or file")
     ap.add_argument("--skip-warmup", type=int, default=1,
                     help="drop the first N turns of each mode (cold models)")
     args = ap.parse_args()
 
     path = Path(args.traces)
     if not path.exists():
-        raise SystemExit(f"no traces at {path}. Run `make bench` first, "
-                         f"or pass --traces.")
+        raise SystemExit(f"no traces at {path}. Run `make live` or "
+                         f"`make trace` first, or pass --traces.")
 
     spans = load_spans(path)
     wins = windows(spans)
