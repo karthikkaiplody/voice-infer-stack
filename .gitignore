@@ -25,3 +25,7 @@ diagrams/*.visual-check.*
 *.onnx
 *.onnx.json
 models/
+
+# Agent context: local working notes, deliberately not part of the project
+AGENTS.md
+CLAUDE.md
