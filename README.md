@@ -37,6 +37,18 @@ real recorded turn went.
 That is deliberate. The pipeline is how the traces were made; the traces and the
 analysis are the part worth reading.
 
+## Watch a request flow through the pipeline
+
+```bash
+python3 viewer.py --open
+```
+
+One self-contained HTML page, no server and no dependencies, showing a single
+turn: you stop speaking, the agent decides you are done, your audio becomes
+text, the text becomes a reply, the reply becomes audio. Every bar is drawn
+where that stage actually ran, so gaps and overlaps are visible rather than
+described, and the transcript and reply are shown inline.
+
 ## Run it yourself
 
 ```bash
