@@ -20,8 +20,6 @@ from pathlib import Path
 from loguru import logger
 
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
-from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -29,9 +27,6 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.services.kokoro.tts import KokoroTTSService
-from pipecat.services.ollama.llm import OLLamaLLMService, OllamaLLMSettings
-from pipecat.services.whisper.stt import MLXModel, WhisperSTTServiceMLX
 from pipecat.transports.base_transport import TransportParams
 from pipecat.turns.user_stop import (
     SpeechTimeoutUserTurnStopStrategy,
@@ -62,6 +57,7 @@ REPS = 3
 # work is thrown away. Raising this fixes it by WAITING LONGER. That wait is
 # not compute. It is the agent deliberately doing nothing, and on a naive
 # implementation it is the single largest line in the latency budget.
+import factory
 from config import CONFIG
 VAD_STOP_SECS = CONFIG.vad_stop_secs
 TRACES = Path("artifacts/spike-traces.jsonl")
@@ -78,33 +74,15 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
     transport = WavFileTransport(params, wav, capture,
                                  trailing_silence_s=CONFIG.trailing_silence_s)
 
-    stt = WhisperSTTServiceMLX(
-        model=CONFIG.stt_model,
-        # Without this Pipecat assumes 1.0 s for a local model that returns in
-        # tens of milliseconds, and holds the turn open waiting. See config.py.
-        ttfs_p99_latency=CONFIG.stt_ttfs_p99,
-    )
-    # EVERY value here comes from CONFIG. Hardcoding any of them is how the two
-    # builds silently end up running different models, which invalidates the
-    # whole comparison. That is not hypothetical: this file hardcoded
-    # llama3.2:3b while naive.py read CONFIG, and one tuned run compared a 1b
-    # naive build against a 3b streaming build before it was caught.
-    llm = OLLamaLLMService(
-        model=CONFIG.llm_model,
-        settings=OllamaLLMSettings(
-            system_instruction=CONFIG.system_prompt,
-            temperature=CONFIG.llm_temperature,
-            seed=CONFIG.llm_seed,
-            max_tokens=CONFIG.llm_max_tokens,
-        ),
-    )
-    tts = KokoroTTSService(voice_id=CONFIG.tts_voice)
+    # Both builds construct their stages here, so swapping an engine changes
+    # BOTH and the comparison stays a comparison of scheduling.
+    stt, llm, tts = factory.make_stt(), factory.make_llm(), factory.make_tts()
 
     context = LLMContext()
     user_agg, assistant_agg = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=stop_secs)),
+            vad_analyzer=factory.make_vad(),
             # Endpointing is stated explicitly rather than left to the
             # default. Pipecat's default strategy adds a 0.6 s policy window on
             # top of the VAD silence window (see CONFIG.user_speech_timeout),
@@ -147,7 +125,8 @@ async def one_run(rep: int, wav: str = None, stop_secs: float = None) -> Capture
         enable_turn_tracking=True,
         conversation_id=f"spike-{rep}",
         additional_span_attributes={"mode": "streaming", "fixture": Path(wav).stem, "rep": rep,
-                                   "vad.stop_secs": stop_secs},
+                                   "vad.stop_secs": stop_secs,
+                                   "stack": factory.describe()},
     )
 
     runner = WorkerRunner(handle_sigint=False)

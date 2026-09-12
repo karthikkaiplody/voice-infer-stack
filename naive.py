@@ -26,6 +26,7 @@ import numpy as np
 from loguru import logger
 
 import analysis
+import factory
 from config import CONFIG
 from tracing_setup import (
     emit_e2e_span,
@@ -43,10 +44,9 @@ async def listen(wav_path: str, capture: Capture) -> tuple[bytes, float]:
     deliver. The detector is the same Silero VAD with the same stop_secs the
     streaming build uses, driven by hand instead of by a pipeline.
     """
-    from pipecat.audio.vad.silero import SileroVADAnalyzer
-    from pipecat.audio.vad.vad_analyzer import VADParams, VADState
+    from pipecat.audio.vad.vad_analyzer import VADState
 
-    vad = SileroVADAnalyzer(params=VADParams(stop_secs=CONFIG.vad_stop_secs))
+    vad = factory.make_vad()
     vad.set_sample_rate(CONFIG.input_sample_rate)
 
     with wave.open(wav_path, "rb") as wf:
