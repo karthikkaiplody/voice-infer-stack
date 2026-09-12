@@ -1,25 +1,22 @@
 # Where Did My 800 Milliseconds Go?
 #
+#   make budget     read a recorded turn, no install needed
+#   make live       talk to the agent and watch the latency arrive (localhost:8080)
+#   make viewer     open one recorded turn as an HTML waterfall
+#
 #   make setup      install python deps + pull models   (once, needs network)
-#   make budget     read the committed reference traces (no models needed)
+#   make devices    list microphones so you can pick the right one
+#   make trace      run one WAV utterance through the pipeline, no microphone
 #   make fixtures   regenerate the synthetic utterances
 #   make record     record your own voice
-#   make bench      run both builds and write fresh traces
-#   make tuned      re-run with settings sized for a local stack
-#   make sweep      sweep the VAD silence timeout
-#   make clips      write the cold-open audio for both builds
-#   make devices   list microphones so you can pick the right one
-#   make live      talk to the agent live and watch it flow (localhost:8080)
-#   make viewer     open one turn as an HTML timeline in your browser
-#   make charts     render the waterfall
+#   make test       the measurement invariants
 
 FIXTURE ?= 02-medium
-REPS    ?= 3
 TRACES  ?= artifacts/reference-traces.jsonl
 SECONDS ?= 6
 NAME    ?= my-question
 
-.PHONY: help setup models budget fixtures record bench tuned sweep clips devices live viewer charts test clean
+.PHONY: help setup models budget fixtures record trace devices live viewer test clean
 
 help:
 	@grep -E '^#   ' Makefile | sed 's/^#   //'
@@ -42,23 +39,9 @@ fixtures: ## regenerate synthetic utterances with Kokoro
 record: ## record your own utterance: make record NAME=my-question SECONDS=6
 	uv run python record.py --name $(NAME) --seconds $(SECONDS)
 
-bench: ## run both builds: make bench FIXTURE=02-medium REPS=3
-	uv run python bench.py --fixture $(FIXTURE) --reps $(REPS) --traces $(TRACES)
-
-tuned: ## the same pipeline with local-appropriate settings (see README)
-	VOICE_STT_MODEL=mlx-community/whisper-tiny \
-	VOICE_LLM_MODEL=llama3.2:1b \
-	VOICE_VAD_STOP_SECS=0.3 \
-	VOICE_USER_SPEECH_TIMEOUT=0.0 \
-	uv run python bench.py --fixture $(FIXTURE) --reps $(REPS) \
-	    --traces artifacts/tuned-traces.jsonl
-	uv run python budget.py --traces artifacts/tuned-traces.jsonl
-
-sweep: ## sweep the VAD silence timeout and show what it costs
-	uv run python sweep.py
-
-clips: ## record the cold-open audio for both builds
-	uv run python clips.py --fixture $(FIXTURE)
+trace: ## run one fixture through the pipeline without a microphone
+	uv run python agent.py fixtures/$(FIXTURE).wav
+	uv run python budget.py --traces artifacts/my-traces.jsonl
 
 devices: ## list microphones, so you can pick the right one
 	@uv run python -c "import factory; [print(('  * ' if d['default'] else '    ')+f\"[{d['index']}] {d['name']}\") for d in factory.list_input_devices()]"
@@ -77,9 +60,6 @@ live: ## talk to the agent and watch the stages light up
 
 viewer: ## render one turn as a standalone HTML page
 	python3 viewer.py --traces $(TRACES) --open
-
-charts:
-	uv run python chart.py --traces $(TRACES)
 
 test:
 	uv run pytest -q

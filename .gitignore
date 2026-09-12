@@ -21,6 +21,11 @@ diagrams/*.visual-check.*
 # Conductor workspace scratch
 .context/
 
+# Traces you produce yourself. The committed ones are reference-traces.jsonl
+# (one recorded turn) and scheduling-comparison.jsonl (what the tests read).
+artifacts/live-traces.jsonl
+artifacts/my-traces.jsonl
+
 # Piper downloads voice models into the working directory
 *.onnx
 *.onnx.json

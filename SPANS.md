@@ -47,8 +47,8 @@ clipping it appears to dominate the budget when most of its span was free.
 
 | Attribute | | |
 |---|---|---|
-| `mode` | required | how this run was scheduled, e.g. `naive`, `streaming` |
-| `fixture` | optional | which utterance |
+| `mode` | required | how the turn was produced, e.g. `live`, `file` |
+| `fixture` | optional | which recorded utterance, if it was not a microphone |
 
 ## Recognised stages
 

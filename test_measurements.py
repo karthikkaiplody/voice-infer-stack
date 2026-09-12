@@ -8,6 +8,12 @@ Everything here runs against the committed reference traces, so it needs no
 models and no GPU:
 
     uv run pytest -q
+
+`artifacts/scheduling-comparison.jsonl` is a fixed recording, kept exactly as
+it was captured. It holds the same utterance run two ways, one overlapping its
+stages and one strictly sequential, which is what makes it the right input for
+these tests: the interval maths has something to get wrong. Nothing in the repo
+produces it any more, and nothing should regenerate it.
 """
 
 import json
@@ -20,7 +26,7 @@ import analysis
 import budget
 from config import CONFIG
 
-TRACES = Path("artifacts/reference-traces.jsonl")
+TRACES = Path("artifacts/scheduling-comparison.jsonl")
 FIXTURES = Path("fixtures/manifest.json")
 COMPUTE = ["stt", "llm", "tts"]
 
@@ -28,7 +34,7 @@ COMPUTE = ["stt", "llm", "tts"]
 @pytest.fixture(scope="module")
 def spans():
     if not TRACES.exists():
-        pytest.skip(f"{TRACES} missing; run `make bench`")
+        pytest.skip(f"{TRACES} missing")
     return budget.load_spans(TRACES)
 
 
@@ -240,7 +246,7 @@ def test_config_has_every_field_the_builds_use():
 
     `trailing_silence_s` was deleted by an over-wide edit and stayed broken
     through two commits, because the invariants read committed traces and never
-    run naive.py. This asserts the surface both builds actually import.
+    run the pipeline. This asserts the surface the pipeline actually imports.
     """
     from dataclasses import fields as dc_fields
 
@@ -257,11 +263,16 @@ def test_config_has_every_field_the_builds_use():
     assert required <= have, f"config.py is missing {sorted(required - have)}"
 
 
-def test_both_builds_import_cleanly():
-    """Catches a broken module before a bench run does, which costs minutes."""
+def test_every_module_imports_cleanly():
+    """Catches a broken module before a run does, which costs minutes.
+
+    `live` is included deliberately: it is the main artifact, it is the file
+    most likely to be edited, and nothing else here would notice if an import
+    in it broke.
+    """
     import importlib
 
-    for mod in ("naive", "streaming", "chart", "clips", "bench"):
+    for mod in ("agent", "live", "factory", "viewer", "wav_transport"):
         importlib.import_module(mod)
 
 

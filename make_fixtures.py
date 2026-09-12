@@ -1,13 +1,12 @@
-"""Generate the benchmark's input utterances locally with Kokoro.
+"""Generate the repo's input utterances locally with Kokoro.
 
 No API keys, no account, no committed binaries needed to get started: `uv run
 python make_fixtures.py` reproduces every input WAV from text.
 
-CAVEAT, and it belongs on a slide as well as in the README: synthetic speech
-has clean endpoints. No breath, no trailing "umm", no hesitation. That makes a
-turn detector look BETTER than it does on human speech. The measured
-naive-vs-streaming comparison is unaffected (both modes get identical input),
-but turn-detection numbers from these fixtures are a best case. Human-recorded
+CAVEAT: synthetic speech has clean endpoints. No breath, no trailing "umm", no
+hesitation. That makes a turn detector look BETTER than it does on human
+speech, so a turn-detection number from these fixtures is a best case. Talk to
+it yourself, or `make record`, and the same row gets longer. Human-recorded
 fixtures live alongside these and are labelled as such in manifest.json.
 """
 
@@ -44,7 +43,7 @@ def analyse_speech(pcm: bytes, sr: int, frame_ms: int = 20, thresh: float = 0.02
        makes the plan's invariant (t_speech_end < duration) impossible to hold.
     2. Internal pause length is what determines the minimum workable VAD
        `stop_secs`. A pause longer than stop_secs ends the turn mid-sentence.
-       Publishing the pause lengths is what makes the sweep interpretable
+       Publishing the pause lengths is what makes a turn-detection result interpretable
        instead of a table of unexplained thresholds.
     """
     a = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0

@@ -1,11 +1,10 @@
 [project]
 name = "voice-infer-stack"
 version = "0.1.0"
-description = "Add your description here"
+description = "A local voice agent you can watch, stage by stage, while it answers you"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "matplotlib>=3.11.1",
     "numpy>=2.5.2",
     "opentelemetry-exporter-otlp-proto-http>=1.44.0",
     "pipecat-ai[kokoro,local,local-smart-turn,mlx-whisper,piper,silero,tracing,whisper]==1.8.1",

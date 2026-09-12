@@ -1,13 +1,13 @@
 """Build the four stages from config, so components are genuinely swappable.
 
-This is the seam that makes the repo a playground. Both builds construct their
-stages here, so swapping an engine changes BOTH of them at once and the
-comparison between them stays honest. An engine wired into only one build would
-silently turn a scheduling comparison into a model comparison.
+This is the seam that makes the repo a playground. Every way of running the
+pipeline constructs its stages here, so a swap is one environment variable and
+it applies everywhere at once -- including to the live page, where the change
+shows up as a differently shaped waterfall.
 
-    VOICE_STT_ENGINE=faster-whisper  make bench
-    VOICE_TTS_ENGINE=piper           make bench
-    VOICE_LLM_MODEL=qwen2.5:0.5b     make bench
+    VOICE_STT_ENGINE=faster-whisper  make live
+    VOICE_TTS_ENGINE=piper           make live
+    VOICE_LLM_MODEL=qwen2.5:0.5b     make live
 
 Every engine here runs locally and needs no API key. Adding one means adding a
 branch below and a row in the table in README.md.
