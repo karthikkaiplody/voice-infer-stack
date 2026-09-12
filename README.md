@@ -39,15 +39,32 @@ analysis are the part worth reading.
 
 ## Watch a request flow through the pipeline
 
+Two ways, depending on whether you want to talk to it or just read it.
+
+**Talk to it.** Needs the full stack installed:
+
+```bash
+make live      # then open http://localhost:8080
+```
+
+Press start and speak into your machine's microphone. The reply comes out of its
+speakers, and the page shows the request moving through the pipeline as it
+happens: voice activity, end of turn, audio becomes text, text becomes a reply,
+reply becomes audio, each with the milliseconds since you stopped speaking. Swap
+a component and run it again to see the shape change.
+
+The microphone is this machine's, not the browser's, which keeps the whole thing
+to a local pipeline and a page of events with no WebRTC and no browser
+permissions.
+
+**Read one you already ran.** Needs nothing at all:
+
 ```bash
 python3 viewer.py --open
 ```
 
-One self-contained HTML page, no server and no dependencies, showing a single
-turn: you stop speaking, the agent decides you are done, your audio becomes
-text, the text becomes a reply, the reply becomes audio. Every bar is drawn
-where that stage actually ran, so gaps and overlaps are visible rather than
-described, and the transcript and reply are shown inline.
+One self-contained HTML page from a trace file. Every bar is drawn where that
+stage actually ran, with the transcript and the reply inline.
 
 ## Run it yourself
 

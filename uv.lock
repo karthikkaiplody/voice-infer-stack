@@ -2255,6 +2255,9 @@ kokoro = [
     { name = "kokoro-onnx" },
     { name = "requests" },
 ]
+local = [
+    { name = "pyaudio" },
+]
 local-smart-turn = [
     { name = "coremltools" },
     { name = "torch" },
@@ -2422,6 +2425,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/15/6a/acfdf17de0d6947b419da8696e02b781b18de2cf49e0472298b50e1f0711/pyaml-26.7.0.tar.gz", hash = "sha256:11cda3a796efc6dbce0d56836be56cfd26289dad07bcd78e9904086729929c93", size = 30669, upload-time = "2026-07-04T00:34:38.532Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/26/3f05f9e3692853dff663913d5d62fb8df3f5640c8d70b06588c0b51ed953/pyaml-26.7.0-py3-none-any.whl", hash = "sha256:cfa382780c43ae660669b87d394d550a41856ef175f5749f51f753e12d7077ac", size = 27226, upload-time = "2026-07-04T00:34:37.198Z" },
+]
+
+[[package]]
+name = "pyaudio"
+version = "0.2.14"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/1d/8878c7752febb0f6716a7e1a52cb92ac98871c5aa522cba181878091607c/PyAudio-0.2.14.tar.gz", hash = "sha256:78dfff3879b4994d1f4fc6485646a57755c6ee3c19647a491f790a0895bd2f87", size = 47066, upload-time = "2023-11-07T07:11:48.806Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/45/8d2b76e8f6db783f9326c1305f3f816d4a12c8eda5edc6a2e1d03c097c3b/PyAudio-0.2.14-cp312-cp312-win32.whl", hash = "sha256:5fce4bcdd2e0e8c063d835dbe2860dac46437506af509353c7f8114d4bacbd5b", size = 144750, upload-time = "2023-11-07T07:11:40.142Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/6a/d25812e5f79f06285767ec607b39149d02aa3b31d50c2269768f48768930/PyAudio-0.2.14-cp312-cp312-win_amd64.whl", hash = "sha256:12f2f1ba04e06ff95d80700a78967897a489c05e093e3bffa05a84ed9c0a7fa3", size = 164126, upload-time = "2023-11-07T07:11:41.539Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/77/66cd37111a87c1589b63524f3d3c848011d21ca97828422c7fde7665ff0d/PyAudio-0.2.14-cp313-cp313-win32.whl", hash = "sha256:95328285b4dab57ea8c52a4a996cb52be6d629353315be5bfda403d15932a497", size = 150982, upload-time = "2024-11-20T19:12:12.404Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/8b/7f9a061c1cc2b230f9ac02a6003fcd14c85ce1828013aecbaf45aa988d20/PyAudio-0.2.14-cp313-cp313-win_amd64.whl", hash = "sha256:692d8c1446f52ed2662120bcd9ddcb5aa2b71f38bda31e58b19fb4672fffba69", size = 173655, upload-time = "2024-11-20T19:12:13.616Z" },
 ]
 
 [[package]]
@@ -3155,7 +3170,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "pipecat-ai", extra = ["kokoro", "local-smart-turn", "mlx-whisper", "piper", "tracing", "whisper"] },
+    { name = "pipecat-ai", extra = ["kokoro", "local", "local-smart-turn", "mlx-whisper", "piper", "tracing", "whisper"] },
     { name = "soundfile" },
     { name = "transformers" },
 ]
@@ -3170,7 +3185,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.1" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.44.0" },
-    { name = "pipecat-ai", extras = ["kokoro", "local-smart-turn", "mlx-whisper", "piper", "silero", "tracing", "whisper"], specifier = "==1.8.1" },
+    { name = "pipecat-ai", extras = ["kokoro", "local", "local-smart-turn", "mlx-whisper", "piper", "silero", "tracing", "whisper"], specifier = "==1.8.1" },
     { name = "soundfile", specifier = ">=0.14.0" },
     { name = "transformers", specifier = ">=4.48,<5" },
 ]
