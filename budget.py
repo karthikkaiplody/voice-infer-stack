@@ -127,7 +127,8 @@ def summarize(spans, win):
 def render(summary, label):
     a = summary["attrs"]
     mode = a.get("mode", "unknown")
-    fixture = a.get("fixture", "?")
+    # A live turn has no fixture: you were the input.
+    fixture = a.get("fixture") or ("microphone" if mode == "live" else "?")
     wall = summary["wall_ms"]
 
     print()
