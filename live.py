@@ -26,6 +26,8 @@ from pathlib import Path
 
 from aiohttp import web
 from loguru import logger
+from pipecat.audio.volume import AudioVolumeTracker
+from pipecat.observers.base_observer import BaseObserver, FramePushed
 
 import factory
 from config import CONFIG
@@ -56,8 +58,14 @@ def emit(kind: str, stage: str = "", text: str = "", ms: float | None = None):
             pass
 
 
-class StageObserver:
+class StageObserver(BaseObserver):
     """Turn pipeline frames into the events the page draws.
+
+    Subclasses BaseObserver directly and deliberately. Mixing it in behind
+    BaseObserver (`class Obs(BaseObserver, StageObserver)`) put BaseObserver
+    first in the MRO, so ITS no-op on_push_frame won and this class never ran.
+    The pipeline looked healthy and the page sat at "Listening" forever with an
+    empty trace, because nothing was ever observed.
 
     Deliberately a thin translation layer: it reports what Pipecat already
     announces rather than timing anything itself. The authoritative numbers come
@@ -65,9 +73,12 @@ class StageObserver:
     """
 
     def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._t0 = None
         self._seen = set()
         self._open: dict[str, float] = {}   # stage -> ms offset it began at
+        self._lvl_at = 0.0                  # throttle for the input meter
+        self._vol = AudioVolumeTracker()    # the same metric the VAD gates on
 
     def _ms(self, now):
         return (now - self._t0) * 1000 if self._t0 else 0.0
@@ -88,7 +99,7 @@ class StageObserver:
             except asyncio.QueueFull:
                 pass
 
-    async def on_push_frame(self, data):
+    async def on_push_frame(self, data: FramePushed):
         from pipecat.frames.frames import (
             BotStartedSpeakingFrame,
             BotStoppedSpeakingFrame,
@@ -100,8 +111,24 @@ class StageObserver:
             UserStoppedSpeakingFrame,
         )
 
+        from pipecat.frames.frames import InputAudioRawFrame
+
         f = data.frame
         now = time.monotonic()
+
+        # Input level, ~10/s. Without this a silent pipeline is indistinguishable
+        # from a wrong microphone or a VAD gate the signal never reaches, which
+        # is exactly the failure this page is supposed to make obvious.
+        if isinstance(f, InputAudioRawFrame):
+            # Measured with Pipecat's OWN volume function, not a hand-rolled
+            # RMS. The VAD compares this exact number against min_volume, so
+            # the meter and the gate marker on the page are the same scale and
+            # "am I loud enough?" is answerable by looking.
+            self._vol.update(f.audio, f.sample_rate)
+            if now - self._lvl_at > 0.1:
+                self._lvl_at = now
+                emit("level", "", "", self._vol.volume)
+            return
 
         if isinstance(f, UserStartedSpeakingFrame):
             self._t0 = now
@@ -137,18 +164,11 @@ class StageObserver:
             self._end("tts", "", now)
             emit("turn_complete", text=f"{self._ms(now):.0f}")
 
-    async def setup(self, *a, **k):
-        pass
-
-    async def cleanup(self, *a, **k):
-        pass
-
 
 async def run_agent():
     """One live conversation, using this machine's microphone and speakers."""
     global RUNNING
 
-    from pipecat.observers.base_observer import BaseObserver
     from pipecat.pipeline.pipeline import Pipeline
     from pipecat.pipeline.worker import PipelineParams, PipelineWorker
     from pipecat.processors.aggregators.llm_context import LLMContext
@@ -165,19 +185,21 @@ async def run_agent():
     from pipecat.turns.user_turn_strategies import UserTurnStrategies
     from pipecat.workers.runner import WorkerRunner
 
-    class Obs(BaseObserver, StageObserver):
-        def __init__(self, **kw):
-            BaseObserver.__init__(self, **kw)
-            StageObserver.__init__(self)
-
     transport = LocalAudioTransport(
         LocalAudioTransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             audio_in_sample_rate=CONFIG.input_sample_rate,
             audio_out_sample_rate=CONFIG.output_sample_rate,
+            input_device_index=CONFIG.audio_device,
         )
     )
+    devs = factory.list_input_devices()
+    cur = CONFIG.audio_device
+    name = next((d["name"] for d in devs
+                 if d["index"] == cur or (cur is None and d["default"])), "?")
+    logger.info(f"microphone: [{cur if cur is not None else 'default'}] {name}")
+    emit("devices", text=json.dumps({"current": cur, "devices": devs, "name": name}))
 
     stt, llm, tts = factory.make_stt(), factory.make_llm(), factory.make_tts()
     context = LLMContext()
@@ -213,7 +235,7 @@ async def run_agent():
     worker = PipelineWorker(
         pipeline,
         params=PipelineParams(enable_metrics=True),
-        observers=[Obs()],
+        observers=[StageObserver()],
     )
     global RUNNER
     runner = WorkerRunner(handle_sigint=False)
@@ -300,7 +322,9 @@ async def stop(request):
 
 
 async def index(request):
-    return web.Response(text=PAGE, content_type="text/html")
+    # The gate marker must track the real setting, or the meter lies.
+    return web.Response(text=PAGE.replace("__GATE__", str(CONFIG.vad_min_volume)),
+                        content_type="text/html")
 
 
 PAGE = """<!DOCTYPE html>
@@ -340,6 +364,14 @@ button:disabled{opacity:.3;cursor:default}
 .status.bad{color:var(--red)} .status.bad .led{background:var(--red)}
 @keyframes bl{0%,100%{opacity:1}50%{opacity:.25}}
 
+.mic{display:flex;align-items:center;gap:10px;margin:-8px 0 18px}
+.ml{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.7px;width:46px}
+.meter{position:relative;flex:0 0 220px;height:7px;background:var(--line);border-radius:4px;
+ overflow:hidden}
+.meter>div{height:100%;width:0;background:var(--run);transition:width .08s linear}
+.meter .gate{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--red);
+ opacity:.8;transition:none}
+.mn{font-size:10.5px;color:var(--faint)}
 .trace{background:var(--panel);border:1px solid var(--line);border-radius:9px;
  padding:0 0 6px;overflow:hidden}
 .ticks{position:relative;height:26px;margin-left:var(--gut);
@@ -389,6 +421,8 @@ code{color:var(--dim)}
 </div>
 
 <div class="status" id="st"><span class="led"></span><span id="stx">Idle. Use headphones, or the agent hears itself.</span></div>
+<div class="mic"><span class="ml">input</span><div class="meter"><div id="lvl"></div>
+  <div class="gate" id="gate"></div></div><span class="mn" id="mic">—</span></div>
 
 <div class="trace">
   <div class="ticks" id="ticks"><span class="unit">ms</span>
@@ -423,6 +457,7 @@ Swap a component: <code>VOICE_TTS_ENGINE=piper make live</code>
 <script>
 const $=i=>document.getElementById(i), S=["vad","stt","llm","tts"];
 let scale=2000, open={}, t0=null, frozen=null;
+const GATE=__GATE__;   // CONFIG.vad_min_volume: below this the VAD ignores you
 
 function ticks(){
   const box=$("ticks"), keep=[$("mark"),$("head"),box.querySelector(".unit")];
@@ -453,7 +488,6 @@ function reset(){
   S.forEach(s=>{ const r=$("r-"+s), sp=r.querySelector(".span");
     r.className="row"; delete sp.dataset.a; delete sp.dataset.b;
     redraw(s); $("n-"+s).textContent=""; });
-  $("head").style.display="block";
 }
 function status(t,cls){ $("stx").textContent=t; $("st").className="status "+(cls||""); }
 
@@ -469,6 +503,7 @@ function status(t,cls){ $("stx").textContent=t; $("st").className="status "+(cls
   requestAnimationFrame(loop);
 })();
 ticks();
+$("gate").style.left=(GATE*100)+"%";
 
 $("go").onclick=async()=>{ $("go").disabled=true; reset(); t0=null;
   $("total").textContent="—";
@@ -480,12 +515,21 @@ $("halt").onclick=async()=>{ $("halt").disabled=true; status("Stopping…","busy
 
 new EventSource("/events").onmessage=m=>{
   const e=JSON.parse(m.data);
+  if(e.kind==="level"){ const v=Math.max(0,Math.min(1,e.ms||0));
+    $("lvl").style.width=(v*100)+"%";
+    $("lvl").style.background = v >= GATE ? "var(--ok)" : "var(--run)";
+    $("mic").dataset.v = v.toFixed(2);
+    return; }
+  if(e.kind==="devices"){ const d=JSON.parse(e.text);
+    $("mic").textContent=d.name+(d.current===null?" (default)":"");
+    return; }
   if(e.kind==="ready"){ $("stack").textContent=e.text; $("halt").disabled=false;
     status("Listening. Say something.","live"); return; }
   if(e.kind==="error"){ status(e.text,"bad"); return; }
   if(e.kind==="stopped"){ $("go").disabled=false; $("halt").disabled=true;
     t0=null; open={}; $("head").style.display="none"; status("Stopped."); return; }
-  if(e.kind==="reset"){ reset(); status("Hearing you.","busy"); return; }
+  if(e.kind==="reset"){ reset(); $("head").style.display="block";
+    status("Hearing you.","busy"); return; }
   if(e.kind==="turn_complete"){ open={}; t0=null; $("head").style.display="none";
     $("tlab").textContent="this turn"; $("total").textContent=(+e.text).toLocaleString()+" ms";
     status("Listening. Say something.","live"); return; }
