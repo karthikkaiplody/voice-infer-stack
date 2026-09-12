@@ -36,6 +36,8 @@ from config import CONFIG
 CLIENTS: list[asyncio.Queue] = []
 LAST_READY: dict | None = None
 RUNNING = False
+RUNNER = None      # the WorkerRunner, so Stop can cancel it
+TASK: asyncio.Task | None = None   # the task running it, so shutdown can join it
 
 
 def emit(kind: str, stage: str = "", text: str = "", ms: float | None = None):
@@ -136,6 +138,7 @@ async def run_agent():
         LocalAudioTransport,
         LocalAudioTransportParams,
     )
+    from pipecat.turns.user_mute import AlwaysUserMuteStrategy
     from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
     from pipecat.turns.user_turn_strategies import UserTurnStrategies
     from pipecat.workers.runner import WorkerRunner
@@ -166,6 +169,18 @@ async def run_agent():
                     wait_for_transcript=CONFIG.wait_for_transcript,
                 )]
             ),
+            # THE ECHO FIX. Microphone and speakers are the same machine and
+            # there is no acoustic echo cancellation, so without this the bot
+            # hears its own voice, VAD treats it as you speaking, the reply is
+            # interrupted mid-sentence, and the bot's own words get transcribed
+            # back in as your next question. Observed in a real session: the
+            # context filled with the bot answering itself about Die Hard.
+            #
+            # Muting input while the bot speaks also fixes a second symptom.
+            # An interrupted assistant turn never commits to the context, so
+            # every message accumulated as role=user and the conversation had
+            # no assistant side at all.
+            user_mute_strategies=[AlwaysUserMuteStrategy()],
         ),
     )
 
@@ -178,14 +193,22 @@ async def run_agent():
         params=PipelineParams(enable_metrics=True),
         observers=[Obs()],
     )
+    global RUNNER
     runner = WorkerRunner(handle_sigint=False)
+    RUNNER = runner
     await runner.add_workers(worker)
 
     emit("ready", text=factory.describe())
     try:
         await runner.run()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.exception("pipeline failed")
+        emit("error", text=f"{type(e).__name__}: {e}")
     finally:
         RUNNING = False
+        RUNNER = None
         emit("stopped")
 
 
@@ -218,12 +241,26 @@ async def sse(request):
 
 
 async def start(request):
-    global RUNNING
+    global RUNNING, TASK
     if RUNNING:
         return web.json_response({"ok": False, "error": "already running"})
     RUNNING = True
-    asyncio.create_task(run_agent())
+    # Held, not fire-and-forget. An untracked task keeps the event loop alive
+    # after aiohttp has shut down, so ctrl+c appeared to do nothing.
+    TASK = asyncio.create_task(run_agent())
     return web.json_response({"ok": True, "stack": factory.describe()})
+
+
+async def stop(request):
+    global RUNNING
+    if not RUNNING or RUNNER is None:
+        return web.json_response({"ok": False, "error": "not running"})
+    try:
+        await RUNNER.cancel()
+    except Exception as e:
+        logger.warning(f"cancel: {e}")
+    RUNNING = False
+    return web.json_response({"ok": True})
 
 
 async def index(request):
@@ -241,9 +278,13 @@ main{max-width:760px;margin:0 auto}
 h1{font-size:21px;margin:0 0 4px}
 p.sub{margin:0 0 8px;color:#78756e}
 p.stack{margin:0 0 30px;color:#a8a49b;font-size:12px}
+.ctl{display:flex;gap:10px}
 button{font:inherit;padding:11px 22px;border:1px solid #1a1a18;border-radius:8px;
  background:#1a1a18;color:#fff;cursor:pointer}
-button:disabled{opacity:.4;cursor:default}
+button.ghost{background:#fff;color:#1a1a18}
+button:disabled{opacity:.35;cursor:default}
+.hint b{color:#1a1a18}
+.err{color:#b91c1c}
 .hint{margin:14px 0 30px;color:#78756e;font-size:13px;min-height:20px}
 .stage{display:grid;grid-template-columns:26px 150px 1fr 78px;gap:14px;
  align-items:center;padding:15px 0;border-top:1px solid #eceae5}
@@ -265,8 +306,12 @@ code{background:#f1efea;padding:1px 5px;border-radius:3px}
 <h1>Voice agent, under the hood</h1>
 <p class="sub">Press start, then talk to your machine. Watch where the time goes.</p>
 <p class="stack" id="stack"></p>
-<button id="go">Start listening</button>
-<p class="hint" id="hint">The microphone and speakers are this machine's.</p>
+<div class="ctl">
+  <button id="go">Start listening</button>
+  <button id="halt" class="ghost" disabled>Stop</button>
+</div>
+<p class="hint" id="hint">Uses this machine's microphone and speakers.
+<b>Wear headphones</b> — otherwise the agent hears itself.</p>
 
 <div id="stages">
   <div class="stage" id="s-vad"><div class="dot"></div>
@@ -297,22 +342,30 @@ function reset(){ ["vad","stt","llm","tts"].forEach(s=>{
   const e = el(s); e.className = "stage";
   e.querySelector(".out").textContent=""; e.querySelector(".ms").textContent="";
 });}
+function hint(t, bad){ $("hint").innerHTML = t; $("hint").className = "hint" + (bad?" err":""); }
 $("go").onclick = async () => {
-  $("go").disabled = true;
-  $("hint").textContent = "starting the pipeline, this loads models on first run...";
+  $("go").disabled = true; reset();
+  hint("Loading models… the first run downloads and warms them, which can take "
+     + "a minute. Nothing is listening yet.");
   const r = await (await fetch("/start", {method:"POST"})).json();
-  if(!r.ok){ $("hint").textContent = r.error; $("go").disabled = false; }
+  if(!r.ok){ hint(r.error, true); $("go").disabled = false; }
+};
+$("halt").onclick = async () => {
+  $("halt").disabled = true;
+  hint("stopping…");
+  await fetch("/stop", {method:"POST"});
 };
 const es = new EventSource("/events");
 es.onmessage = m => {
   const e = JSON.parse(m.data);
   if(e.kind === "ready"){ $("stack").textContent = e.text;
-    $("hint").textContent = "Listening. Say something."; return; }
+    $("halt").disabled = false;
+    hint("<b>Listening.</b> Say something."); return; }
   if(e.kind === "reset"){ reset(); return; }
-  if(e.kind === "stopped"){ $("go").disabled = false;
-    $("hint").textContent = "stopped"; return; }
-  if(e.kind === "turn_complete"){ $("hint").textContent =
-    "Your turn. Say something else."; return; }
+  if(e.kind === "error"){ hint(e.text, true); return; }
+  if(e.kind === "stopped"){ $("go").disabled = false; $("halt").disabled = true;
+    hint("Stopped."); return; }
+  if(e.kind === "turn_complete"){ hint("Your turn. Say something else."); return; }
   const box = el(e.stage); if(!box) return;
   if(e.kind === "active"){ box.className = "stage active";
     box.querySelector(".out").textContent = e.text || ""; }
@@ -328,6 +381,37 @@ es.onmessage = m => {
 </script></body></html>"""
 
 
+async def shutdown(app):
+    """Ctrl+C: put the microphone down before leaving.
+
+    The pipeline owns a PyAudio input stream. Exiting without cancelling the
+    worker leaves the device open and the next run fails to acquire it, so a
+    tidy exit here is what makes `make live` restartable.
+    """
+    global TASK
+    if RUNNER is not None:
+        logger.info("stopping the pipeline...")
+        try:
+            await RUNNER.cancel()
+        except Exception:
+            pass
+    if TASK is not None and not TASK.done():
+        TASK.cancel()
+        try:
+            # Bounded: a pipeline that will not let go must not hold the
+            # terminal hostage. Exiting late is better than not exiting.
+            await asyncio.wait_for(asyncio.shield(TASK), timeout=5)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+        TASK = None
+    for q in list(CLIENTS):
+        try:
+            q.put_nowait({"kind": "stopped", "stage": "", "text": "",
+                          "ms": None, "t": time.time()})
+        except asyncio.QueueFull:
+            pass
+
+
 def main():
     import argparse
 
@@ -336,11 +420,20 @@ def main():
     args = ap.parse_args()
 
     app = web.Application()
+    app.on_cleanup.append(shutdown)
     app.add_routes([web.get("/", index), web.get("/events", sse),
-                    web.post("/start", start)])
+                    web.post("/start", start), web.post("/stop", stop)])
     logger.info(f"open http://localhost:{args.port}")
     logger.info(f"stack: {factory.describe()}")
-    web.run_app(app, port=args.port, print=None)
+    logger.info("ctrl+c to quit")
+    try:
+        web.run_app(app, port=args.port, print=None, handle_signals=True)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # aiohttp already ran on_cleanup by here. This is only so the terminal
+        # ends on a sentence rather than a traceback.
+        logger.info("bye")
 
 
 if __name__ == "__main__":
