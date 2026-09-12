@@ -8,6 +8,7 @@
 #   make tuned      re-run with settings sized for a local stack
 #   make sweep      sweep the VAD silence timeout
 #   make clips      write the cold-open audio for both builds
+#   make viewer     open one turn as an HTML timeline in your browser
 #   make charts     render the waterfall
 
 FIXTURE ?= 02-medium
@@ -16,7 +17,7 @@ TRACES  ?= artifacts/reference-traces.jsonl
 SECONDS ?= 6
 NAME    ?= my-question
 
-.PHONY: help setup models budget fixtures record bench tuned sweep clips charts test clean
+.PHONY: help setup models budget fixtures record bench tuned sweep clips viewer charts test clean
 
 help:
 	@grep -E '^#   ' Makefile | sed 's/^#   //'
@@ -56,6 +57,9 @@ sweep: ## sweep the VAD silence timeout and show what it costs
 
 clips: ## record the cold-open audio for both builds
 	uv run python clips.py --fixture $(FIXTURE)
+
+viewer: ## render one turn as a standalone HTML page
+	python3 viewer.py --traces $(TRACES) --open
 
 charts:
 	uv run python chart.py --traces $(TRACES)
