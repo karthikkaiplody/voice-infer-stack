@@ -60,6 +60,14 @@ clips: ## record the cold-open audio for both builds
 	uv run python clips.py --fixture $(FIXTURE)
 
 live: ## talk to the agent and watch the stages light up
+	@# A live conversation wants responsiveness, not the benchmark's accuracy.
+	@# whisper-tiny returns in ~60 ms against ~1 s for large-v3-turbo-q4, and
+	@# the endpointing timers are set for a local stack rather than a network.
+	@# Override any of these to feel what changes: VOICE_STT_MODEL=... make live
+	VOICE_STT_MODEL=$${VOICE_STT_MODEL:-mlx-community/whisper-tiny} \
+	VOICE_LLM_MODEL=$${VOICE_LLM_MODEL:-llama3.2:1b} \
+	VOICE_USER_SPEECH_TIMEOUT=$${VOICE_USER_SPEECH_TIMEOUT:-0.2} \
+	VOICE_VAD_STOP_SECS=$${VOICE_VAD_STOP_SECS:-0.4} \
 	uv run python live.py
 
 viewer: ## render one turn as a standalone HTML page

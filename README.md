@@ -57,6 +57,22 @@ The microphone is this machine's, not the browser's, which keeps the whole thing
 to a local pipeline and a page of events with no WebRTC and no browser
 permissions.
 
+**Wear headphones.** Microphone and speakers on one machine with no acoustic
+echo cancellation means the agent hears itself: its own voice trips voice
+activity detection, its reply gets interrupted mid-sentence, and its own words
+come back through speech-to-text as your next question. The pipeline mutes the
+microphone while the bot is speaking, which stops the loop, but headphones
+remove the problem rather than managing it.
+
+`make live` deliberately runs a faster stack than the benchmark does —
+whisper-tiny instead of large, and endpointing timers sized for a local machine
+— because a conversation wants responsiveness where a measurement wants
+accuracy. Override any of it to feel the difference:
+
+```bash
+VOICE_STT_MODEL=mlx-community/whisper-large-v3-turbo-q4 make live
+```
+
 **Read one you already ran.** Needs nothing at all:
 
 ```bash
