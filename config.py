@@ -12,7 +12,16 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Config:
     # --- models ---
+    # --- which engine runs each stage (see factory.py) ---
+    stt_engine: str = "mlx"          # mlx | faster-whisper
+    tts_engine: str = "kokoro"       # kokoro | piper
+
     stt_model: str = "mlx-community/whisper-large-v3-turbo-q4"
+    # faster-whisper names its models differently from MLX, so each engine
+    # carries its own, and swapping engines does not silently ask one of them
+    # for a model identifier it has never heard of.
+    stt_model_faster_whisper: str = "base"
+    tts_voice_piper: str = "en_US-ryan-high"
     llm_model: str = "llama3.2:3b"
     tts_voice: str = "af_heart"
 

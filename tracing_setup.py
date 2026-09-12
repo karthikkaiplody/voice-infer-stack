@@ -108,6 +108,11 @@ def emit_e2e_span(capture, mode: str, fixture: str):
     )
     span.set_attribute("mode", mode)
     span.set_attribute("fixture", fixture)
+    try:
+        import factory
+        span.set_attribute("stack", factory.describe())
+    except Exception:
+        pass
     span.set_attribute(
         "duration_ms", round(capture.e2e_speech_end_to_first_audio * 1000, 1)
     )

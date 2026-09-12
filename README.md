@@ -79,6 +79,41 @@ It will also tell you something specific about how you talk:
   needs stop_secs >=  0.26 s   (below this the agent will cut you off)
 ```
 
+## Turn a knob, watch the number move
+
+Every component is chosen in `factory.py` and set from the environment, so a
+swap is one variable, not an edit. A swap always applies to **both** builds, so
+the comparison between them never quietly becomes a comparison of models.
+
+| Knob | Values | What it changes |
+|---|---|---|
+| `VOICE_STT_ENGINE` | `mlx`, `faster-whisper` | MLX is Apple Silicon only; faster-whisper runs anywhere |
+| `VOICE_STT_MODEL` | any MLX Whisper id | `...whisper-tiny` is ~15x faster than `large-v3-turbo-q4` here |
+| `VOICE_TTS_ENGINE` | `kokoro`, `piper` | both local, both download on first use |
+| `VOICE_LLM_MODEL` | any Ollama model | `llama3.2:1b`, `qwen2.5:0.5b`, … |
+| `VOICE_VAD_STOP_SECS` | seconds | how long to wait in silence before deciding you are done |
+| `VOICE_USER_SPEECH_TIMEOUT` | seconds | a second timer stacked on the first. See below. |
+
+```bash
+# the whole stack replaced, both builds, one command
+VOICE_STT_ENGINE=faster-whisper VOICE_TTS_ENGINE=piper make bench
+make budget
+python3 viewer.py --open
+```
+
+Every trace records the stack it ran on, so a result can never be separated
+from the configuration that produced it:
+
+```
+stack: stt=faster-whisper:base  llm=ollama:llama3.2:3b  tts=piper:en_US-ryan-high
+       vad=silero  endpoint=vad_timeout@0.5s
+```
+
+**What is not swappable, and why.** Silero is the only local VAD Pipecat ships,
+so there is no second option to offer. Both Whisper engines are *segmented*:
+neither emits a partial transcript while you are still speaking. That is a
+property of the model, not the engine, and no swap in `factory.py` changes it.
+
 ## What each file does
 
 | File | |
@@ -92,6 +127,8 @@ It will also tell you something specific about how you talk:
 | `bench.py` | Runs both builds with warmup and writes traces. |
 | `clips.py` | Writes what each build sounds like, real silences included. |
 | `record.py` | Record your own utterance and measure its endpoints. |
+| `factory.py` | Builds the four stages from config. The seam that makes components swappable. |
+| `viewer.py` | Renders one turn as a standalone HTML timeline. No dependencies. |
 | `sweep.py` | Sweeps the VAD silence timeout. See "the knob" below. |
 | `chart.py` | Renders the waterfall. One shared x-axis across every chart. |
 | `test_measurements.py` | Invariants that catch a wrong number before it reaches a slide. |
