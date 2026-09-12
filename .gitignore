@@ -20,3 +20,8 @@ diagrams/*.visual-check.*
 
 # Conductor workspace scratch
 .context/
+
+# Piper downloads voice models into the working directory
+*.onnx
+*.onnx.json
+models/
