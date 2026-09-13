@@ -21,6 +21,14 @@ Everything is local: [Pipecat](https://github.com/pipecat-ai/pipecat) as the
 orchestrator, Whisper, Ollama and Kokoro as the stages. No API keys, nothing
 leaves the machine.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/cascade-pipeline.clean.dark.png">
+  <img src="diagrams/slides/cascade-pipeline.clean.light.png" alt="The default stack, stage by stage: microphone frames through Silero VAD and Smart Turn endpointing, Whisper, an Ollama language model, and Kokoro speech synthesis.">
+</picture>
+
+*The default stack, stage by stage. Every box is swappable from the
+environment — see [Turn a knob](#turn-a-knob-watch-the-shape-change).*
+
 **This is not a benchmark.** There are no leaderboards, no "X is faster than
 Y", and no claim about anyone's stack. The numbers you get are yours, from your
 hardware, and the point is the *shape* of them.
@@ -131,7 +139,9 @@ swap is one variable, not an edit:
 | `VOICE_LLM_MODEL` | any Ollama model | `llama3.2:1b`, `qwen2.5:0.5b`, … |
 | `VOICE_VAD_STOP_SECS` | seconds | how long to wait in silence before deciding you are done |
 | `VOICE_VAD_MIN_VOLUME` | 0–1 | how loud counts as speech. Machine-specific; see the meter |
-| `VOICE_USER_SPEECH_TIMEOUT` | seconds | a second timer stacked on the first. See below |
+| `VOICE_USER_SPEECH_TIMEOUT` | seconds | a second timer stacked on the first. See insight 3 below |
+| `VOICE_STT_TTFS_P99` | seconds | the safety-net timer from insight 3. Set it to `1.0` to recreate the stock wait |
+| `VOICE_USE_SMART_TURN` | `1` | swap the silence timer for a learned turn-detection model, and watch the first row change shape |
 
 ```bash
 VOICE_TTS_ENGINE=piper VOICE_LLM_MODEL=qwen2.5:0.5b make live
@@ -141,8 +151,8 @@ Every trace records the stack it ran on, so a result can never be separated
 from the configuration that produced it:
 
 ```
-stack: stt=mlx:whisper-tiny  llm=ollama:llama3.2:1b  tts=kokoro:af_heart
-       vad=silero  endpoint=vad_timeout@0.4s
+stack: stt=mlx:mlx-community/whisper-large-v3-turbo-q4  llm=ollama:llama3.2:3b  tts=kokoro:af_heart
+       vad=silero  endpoint=vad_timeout@0.5s
 ```
 
 **What is not swappable, and why.** Silero is the only local VAD Pipecat ships,
@@ -151,6 +161,29 @@ neither emits a partial transcript while you are still speaking. That is a
 property of the model, not the engine, and no swap in `factory.py` changes it.
 It is also a large part of what hosted streaming speech-to-text actually sells
 you.
+
+## Three swaps to try, in order
+
+Each is one variable on `make trace`, and each moves the budget in a
+different way. Run `make trace` first for a baseline, then these, and
+compare the rows.
+
+**1. Recreate the stock wait.**
+`VOICE_STT_TTFS_P99=1.0 VOICE_USER_SPEECH_TIMEOUT=0.6 make trace`
+Pipecat's own defaults, on a local stack: the turn-detection row grows by
+hundreds of milliseconds while no model changes. This is insight 3 below.
+
+**2. Cut the silence dial too short.**
+`VOICE_VAD_STOP_SECS=0.2 make trace`
+Below the fixture's natural clause pause, the detector fires mid-sentence:
+the agent answers a fragment, throws the work away, and answers again. The
+budget marks the discarded generation. This is insight 2.
+
+**3. The null result.**
+`VOICE_LLM_MODEL=llama3.2:1b make trace` (needs `ollama pull llama3.2:1b`)
+A model a third the size, and end to end barely moves: the `llm` row shrinks
+while the total holds. The model was never the biggest line item — which is
+the thesis of the talk in one command.
 
 ## What each file does
 
@@ -168,6 +201,11 @@ you.
 | `wav_transport.py` | Feeds a WAV into Pipecat at real 20 ms cadence, for running without a microphone. |
 | `record.py`, `make_fixtures.py` | Record your own utterance, or generate one locally. |
 | `test_measurements.py` | Invariants that catch a number that is quietly wrong. |
+| `Makefile` | Every entry point: `make live`, `make trace`, `make budget`, `make viewer`. |
+| `SPANS.md` | The span contract `budget.py` reads. What to emit for your own agent. |
+| `fixtures/`, `artifacts/` | Synthetic utterances, and the recorded turns everyone can read. |
+| `diagrams/` | The diagrams in this README, as explorable HTML plus the script that rendered them. |
+| `warm.py` | Pre-downloads model weights so the first run is not a cold surprise. |
 
 ## Three things worth noticing
 
@@ -178,15 +216,28 @@ finished speaking. It burns no FLOPs, it is a config constant, and most people
 never open it. On the live page it is the first bar, and it usually starts
 before anything else is allowed to run.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/turn-timeline.clean.dark.png">
+  <img src="diagrams/slides/turn-timeline.clean.light.png" alt="One turn's phases: listening, silence wait, transcribing, generating, speaking — and the false-endpoint failure path when the wait is too short.">
+</picture>
+
 ### 2. You cannot just turn it down
 
 Below the length of a speaker's natural pause, the detector fires mid-sentence,
 the agent answers a fragment, and the work is thrown away. Turning the timeout
 down can make the turn *slower*, because a discarded generation costs more than
 the wait it saved. The live page shows this directly: a stage that ran twice in
-one turn is marked, because the first one was wasted. A captured example is in
-[`artifacts/turn-detection/`](artifacts/turn-detection/) — read it with
-`python3 viewer.py --traces artifacts/turn-detection/false-endpoint-traces.jsonl --open`.
+one turn is marked, because the first one was wasted. A captured example, with
+every run laid out span by span, is in
+[`artifacts/turn-detection/`](artifacts/turn-detection/). It was recorded before
+the span contract in [`SPANS.md`](SPANS.md) existed, so `viewer.py` cannot draw
+it; to see a false endpoint as a waterfall, cut the silence dial yourself —
+swap 2 in [Three swaps to try](#three-swaps-to-try-in-order).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/false-endpoint.clean.dark.png">
+  <img src="diagrams/slides/false-endpoint.clean.light.png" alt="Sequence diagram of the captured false endpoint: a 260 ms clause pause read as end of turn, a generation answering the fragment, discarded.">
+</picture>
 
 ### 3. Two default timeouts can cost more than any model
 
