@@ -58,9 +58,8 @@ class Config:
     use_smart_turn: bool = False
 
     # Pipecat's endpointing knobs, stated explicitly rather than left implicit.
-    # Both sit at Pipecat's own defaults, which are sized for a hosted service
-    # reached over a network. `make live` overrides them for a local stack, so
-    # you can hear the difference the two timers make.
+    # Both sit at Pipecat's own defaults. `make live` overrides them for a
+    # local stack, so you can hear the difference the two timers make.
     #   user_speech_timeout - a policy window after VAD stop in which the user
     #     may resume before the turn is closed.
     #   wait_for_transcript - also wait for STT to return a transcript.
@@ -73,9 +72,13 @@ class Config:
     #
     # SegmentedSTTService does not report that latency, so Pipecat falls back to
     # a default of 1.0 s and logs "ttfs_p99_latency not set, using default 1.0s".
-    # That default is sized for a network round trip to a hosted STT. Whisper
-    # tiny returns in 67 ms locally, so the pipeline was waiting roughly half a
-    # second for a transcript that had already arrived.
+    # That default is not a network allowance: hosted services ship measured
+    # values, and 1.0 s is the conservative catch-all for local models, whose
+    # speed depends entirely on the hardware in front of them. The net is
+    # short-circuited the moment STT flags a transcript as final, so the full
+    # second is the worst case -- but Whisper tiny returns in 67 ms locally,
+    # and the worst case is what an unflagged transcript gets you: the pipeline
+    # waiting roughly half a second for something that had already arrived.
     #
     # Measured by sweeping user_speech_timeout: 0.0 -> 1093 ms, 0.6 -> 1162 ms,
     # 1.2 -> 1766 ms. Below ~1.1 s the setting made almost no difference,
