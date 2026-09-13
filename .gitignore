@@ -10,6 +10,7 @@ build/
 # Local tool config, not part of the project
 .mcp.json
 .ignore
+.claude/
 
 # graft's local graph cache - regenerable, not committed (run `graft build`).
 /graft/

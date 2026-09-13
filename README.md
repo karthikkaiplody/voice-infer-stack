@@ -190,17 +190,21 @@ one turn is marked, because the first one was wasted. A captured example is in
 
 ### 3. Two default timeouts can cost more than any model
 
-Pipecat closes a turn when **two** timers have both finished, and both defaults
-are sized for a hosted service reached over a network:
+Pipecat closes a turn when **two** timers, started together, have both
+finished:
 
 | Timer | Default | What it is |
 |---|---|---|
-| `ttfs_p99_latency` | **1.0 s** | safety net for how long speech-to-text takes to return a final transcript. Unset by default, so the fallback applies, and it logs a warning most people never read. |
-| `user_speech_timeout` | **0.6 s** | policy window in which the user may resume speaking |
+| `ttfs_p99_latency` | **1.0 s** | safety net for how long speech-to-text takes to return a final transcript. A conservative catch-all for local models, whose speed depends entirely on your hardware — hosted services ship measured values instead. Unset by default, so the fallback applies, and it logs a warning most people never read. |
+| `user_speech_timeout` | **0.6 s** | policy window in which the user may resume speaking. A pause policy, not a network allowance. |
 
-Whisper tiny returns a transcript in about 60 ms locally. The pipeline was
-waiting up to a second for something that had already arrived. `make live` sets
-both honestly for a local stack; set them back and watch the first row grow.
+The safety net is short-circuited the moment speech-to-text flags a transcript
+as final, so the full second is the worst case, not the design. But Whisper
+tiny returns in about 60 ms locally, and the worst case is what an unflagged
+transcript gets you: the pipeline waiting up to a second for something that
+had already arrived. `make live` sets both honestly for a local stack; set
+them back and watch the first row grow. (Pipecat will log that the STT wait
+"collapsed to 0s". That is the point, not a bug.)
 
 ## Measurement notes
 
@@ -250,6 +254,24 @@ a Pipecat agent very nearly does already — it will read your traces too:
 ```bash
 python3 budget.py --traces /path/to/your-traces.jsonl
 ```
+
+## From this repo to production
+
+Everything this repo leaves out is a decision, and each one has a production
+counterpart. If you are here from the talk, this is the map from the four
+boxes to the other eighty percent.
+
+| Here (teaching scale) | Production (the other 80%) |
+|---|---|
+| The microphone is muted while the bot speaks, so the agent cannot be interrupted | Barge-in is a policy, not a boolean: when to stop playback, when to keep listening, and how to preserve the context that was interrupted. Track false-barge-in and missed-interruption rates — aggregate latency stays green while callers are being cut off |
+| No network: microphone and speaker on one machine | Two network legs per turn, each with jitter, packet loss, a codec and a playout buffer. Budget them on both sides of the four stages |
+| One turn at a time, one person, one laptop | Fleet dashboards: P95 turn latency per stage, WER drift, audio quality, cost per conversation |
+| `uv run pytest -q` checks the measurement is honest | Eval suites: golden conversations re-run on every prompt, model or tool change |
+| Spans read from a local JSONL file | The same spans over OTLP into Langfuse, Jaeger or Honeycomb. The span contract in [`SPANS.md`](SPANS.md) is the stable part; the OTel `gen_ai.*` attribute names are still Development-stability, so the contract here is deliberately the repo's own |
+
+Descriptions of Pipecat behaviour in this repo were verified against Pipecat
+1.8.1, September 2026. If a newer Pipecat disagrees, believe the newer one and
+re-check the sections above.
 
 ## Setup notes
 

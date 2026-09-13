@@ -60,10 +60,11 @@ def build_pipeline(transport, *, mute_while_bot_speaks: bool = False) -> Pipelin
         user_params=LLMUserAggregatorParams(
             vad_analyzer=factory.make_vad(),
             # Endpointing stated explicitly rather than left to the default.
-            # Pipecat's stop strategy runs two timers sized for a hosted
-            # service reached over a network, and on a local stack they add up
-            # to roughly 600 ms of waiting for a transcript that has already
-            # arrived. See config.py: both are set honestly here.
+            # Pipecat's stop strategy runs two timers in parallel -- a pause
+            # policy, and a safety net sized to STT's P99 latency which falls
+            # back to a conservative 1.0 s for local models -- and on a local
+            # stack that is roughly 600 ms of waiting for a transcript that
+            # has already arrived. See config.py: both are set honestly here.
             user_turn_strategies=UserTurnStrategies(
                 stop=[
                     TurnAnalyzerUserTurnStopStrategy(
