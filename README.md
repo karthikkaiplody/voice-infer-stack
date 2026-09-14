@@ -23,11 +23,11 @@ leaves the machine.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/cascade-pipeline.clean.dark.png">
-  <img src="diagrams/slides/cascade-pipeline.clean.light.png" alt="The default stack, stage by stage: microphone frames through Silero VAD and Smart Turn endpointing, Whisper, an Ollama language model, and Kokoro speech synthesis.">
+  <img src="diagrams/slides/cascade-pipeline.clean.light.png" alt="The default stack, stage by stage: microphone frames through Silero VAD and endpointing, Whisper, an Ollama language model, and Kokoro speech synthesis.">
 </picture>
 
 *The default stack, stage by stage. Every box is swappable from the
-environment — see [Turn a knob](#turn-a-knob-watch-the-shape-change).*
+environment — see [Part 1 · Swap and see](docs/1-swap-and-see.md).*
 
 **This is not a benchmark.** There are no leaderboards, no "X is faster than
 Y", and no claim about anyone's stack. The numbers you get are yours, from your
@@ -86,6 +86,9 @@ uv run python budget.py --traces artifacts/live-traces.jsonl
 prints the budget for the turn you just watched. The page and the number cannot
 disagree, because there is only one measurement.
 
+**No microphone?** The same pipeline runs from a WAV file, at real 20 ms
+cadence: `make trace`. Details in [Part 1](docs/1-swap-and-see.md).
+
 **Wear headphones.** Microphone and speakers on one machine with no acoustic
 echo cancellation means the agent hears itself: its own voice trips voice
 activity detection and its own words come back through speech-to-text as your
@@ -98,92 +101,16 @@ with Pipecat's own volume metric, the same number the VAD compares against
 is the wrong microphone (`make devices`); a bar that moves but never crosses
 the gate is a threshold your room needs tuned.
 
-## Without a microphone
+## The guide, in order
 
-Same pipeline, same stages, same spans, fed from a WAV file at real 20 ms
-cadence:
+Four short parts. Each stands alone; together they are the talk, written down.
 
-```bash
-make trace                 # or: make trace FIXTURE=03-trailing-pause
-```
-
-It runs the utterance twice, says which run was cold, and prints the budget.
-Record your own instead:
-
-```bash
-make record NAME=my-question SECONDS=7
-make trace FIXTURE=my-question
-```
-
-Speak, then **stop talking and let the recording run on** for a second. That
-trailing silence is not waste; it is what the turn detector needs in order to
-decide you have finished. The script measures where your speech actually ends,
-so the silence never inflates the result, and it will tell you something
-specific about how you talk:
-
-```
-  longest pause       260 ms
-  needs stop_secs >=  0.26 s   (below this the agent will cut you off)
-```
-
-## Turn a knob, watch the shape change
-
-Every component is chosen in `factory.py` and set from the environment, so a
-swap is one variable, not an edit:
-
-| Knob | Values | What it changes |
-|---|---|---|
-| `VOICE_STT_ENGINE` | `mlx`, `faster-whisper` | MLX is Apple Silicon only; faster-whisper runs anywhere |
-| `VOICE_STT_MODEL` | any MLX Whisper id | `whisper-tiny` is ~15x faster than `large-v3-turbo-q4` here |
-| `VOICE_TTS_ENGINE` | `kokoro`, `piper` | both local, both download on first use |
-| `VOICE_LLM_MODEL` | any Ollama model | `llama3.2:1b`, `qwen2.5:0.5b`, … |
-| `VOICE_VAD_STOP_SECS` | seconds | how long to wait in silence before deciding you are done |
-| `VOICE_VAD_MIN_VOLUME` | 0–1 | how loud counts as speech. Machine-specific; see the meter |
-| `VOICE_USER_SPEECH_TIMEOUT` | seconds | a second timer stacked on the first. See insight 3 below |
-| `VOICE_STT_TTFS_P99` | seconds | the safety-net timer from insight 3. Set it to `1.0` to recreate the stock wait |
-| `VOICE_USE_SMART_TURN` | `1` | swap the silence timer for a learned turn-detection model, and watch the first row change shape |
-
-```bash
-VOICE_TTS_ENGINE=piper VOICE_LLM_MODEL=qwen2.5:0.5b make live
-```
-
-Every trace records the stack it ran on, so a result can never be separated
-from the configuration that produced it:
-
-```
-stack: stt=mlx:mlx-community/whisper-large-v3-turbo-q4  llm=ollama:llama3.2:3b  tts=kokoro:af_heart
-       vad=silero  endpoint=vad_timeout@0.5s
-```
-
-**What is not swappable, and why.** Silero is the only local VAD Pipecat ships,
-so there is no second option to offer. Both Whisper engines are *segmented*:
-neither emits a partial transcript while you are still speaking. That is a
-property of the model, not the engine, and no swap in `factory.py` changes it.
-It is also a large part of what hosted streaming speech-to-text actually sells
-you.
-
-## Three swaps to try, in order
-
-Each is one variable on `make trace`, and each moves the budget in a
-different way. Run `make trace` first for a baseline, then these, and
-compare the rows.
-
-**1. Recreate the stock wait.**
-`VOICE_STT_TTFS_P99=1.0 VOICE_USER_SPEECH_TIMEOUT=0.6 make trace`
-Pipecat's own defaults, on a local stack: the turn-detection row grows by
-hundreds of milliseconds while no model changes. This is insight 3 below.
-
-**2. Cut the silence dial too short.**
-`VOICE_VAD_STOP_SECS=0.2 make trace`
-Below the fixture's natural clause pause, the detector fires mid-sentence:
-the agent answers a fragment, throws the work away, and answers again. The
-budget marks the discarded generation. This is insight 2.
-
-**3. The null result.**
-`VOICE_LLM_MODEL=llama3.2:1b make trace` (needs `ollama pull llama3.2:1b`)
-A model a third the size, and end to end barely moves: the `llm` row shrinks
-while the total holds. The model was never the biggest line item — which is
-the thesis of the talk in one command.
+| Part | What it teaches |
+|---|---|
+| [1 · Swap and see](docs/1-swap-and-see.md) | Every component is one environment variable. Three guided swaps, each moving the budget in a different way. |
+| [2 · What to notice](docs/2-what-to-notice.md) | The three insights: the biggest line item does no computing, you cannot just turn it down, and two default timeouts can cost more than any model. |
+| [3 · How the measurement works](docs/3-measurement.md) | The rules that keep the numbers honest, and how to point `budget.py` at your own agent. |
+| [4 · From here to production](docs/4-to-production.md) | The map from this teaching stack to the other eighty percent: barge-in, networks, fleets, evals. |
 
 ## What each file does
 
@@ -202,127 +129,11 @@ the thesis of the talk in one command.
 | `record.py`, `make_fixtures.py` | Record your own utterance, or generate one locally. |
 | `test_measurements.py` | Invariants that catch a number that is quietly wrong. |
 | `Makefile` | Every entry point: `make live`, `make trace`, `make budget`, `make viewer`. |
+| `docs/` | The four-part guide above. |
 | `SPANS.md` | The span contract `budget.py` reads. What to emit for your own agent. |
 | `fixtures/`, `artifacts/` | Synthetic utterances, and the recorded turns everyone can read. |
-| `diagrams/` | The diagrams in this README, as explorable HTML plus the script that rendered them. |
+| `diagrams/` | The diagrams in this README and the guide, as hand-drawn HTML plus the script that renders them. |
 | `warm.py` | Pre-downloads model weights so the first run is not a cold surprise. |
-
-## Three things worth noticing
-
-### 1. The biggest line item does no computing
-
-`stop_secs` is how long the agent waits in silence before deciding you have
-finished speaking. It burns no FLOPs, it is a config constant, and most people
-never open it. On the live page it is the first bar, and it usually starts
-before anything else is allowed to run.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/turn-timeline.clean.dark.png">
-  <img src="diagrams/slides/turn-timeline.clean.light.png" alt="One turn's phases: listening, silence wait, transcribing, generating, speaking — and the false-endpoint failure path when the wait is too short.">
-</picture>
-
-### 2. You cannot just turn it down
-
-Below the length of a speaker's natural pause, the detector fires mid-sentence,
-the agent answers a fragment, and the work is thrown away. Turning the timeout
-down can make the turn *slower*, because a discarded generation costs more than
-the wait it saved. The live page shows this directly: a stage that ran twice in
-one turn is marked, because the first one was wasted. A captured example, with
-every run laid out span by span, is in
-[`artifacts/turn-detection/`](artifacts/turn-detection/). It was recorded before
-the span contract in [`SPANS.md`](SPANS.md) existed, so `viewer.py` cannot draw
-it; to see a false endpoint as a waterfall, cut the silence dial yourself —
-swap 2 in [Three swaps to try](#three-swaps-to-try-in-order).
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="diagrams/slides/false-endpoint.clean.dark.png">
-  <img src="diagrams/slides/false-endpoint.clean.light.png" alt="Sequence diagram of the captured false endpoint: a 260 ms clause pause read as end of turn, a generation answering the fragment, discarded.">
-</picture>
-
-### 3. Two default timeouts can cost more than any model
-
-Pipecat closes a turn when **two** timers, started together, have both
-finished:
-
-| Timer | Default | What it is |
-|---|---|---|
-| `ttfs_p99_latency` | **1.0 s** | safety net for how long speech-to-text takes to return a final transcript. A conservative catch-all for local models, whose speed depends entirely on your hardware — hosted services ship measured values instead. Unset by default, so the fallback applies, and it logs a warning most people never read. |
-| `user_speech_timeout` | **0.6 s** | policy window in which the user may resume speaking. A pause policy, not a network allowance. |
-
-The safety net is short-circuited the moment speech-to-text flags a transcript
-as final, so the full second is the worst case, not the design. But Whisper
-tiny returns in about 60 ms locally, and the worst case is what an unflagged
-transcript gets you: the pipeline waiting up to a second for something that
-had already arrived. `make live` sets both honestly for a local stack; set
-them back and watch the first row grow. (Pipecat will log that the STT wait
-"collapsed to 0s". That is the point, not a bug.)
-
-## Measurement notes
-
-Voice latency is easy to measure wrongly. What this repo does:
-
-- **One source of truth.** Everything that shows what happened and when reads
-  OpenTelemetry spans. The live page, `budget.py` and `viewer.py` are three
-  readers of one measurement, not three implementations of it.
-- **t0 is the end of speech, not the end of the file**, and not the moment the
-  detector noticed. Pipecat's `VADUserStoppedSpeakingFrame` carries both the
-  moment it decided and the silence it had to hear first, so the end of speech
-  is the difference between them.
-- **Overlap is interval intersection, never a sum of durations.** Summing
-  cannot tell concurrency apart from a stage that kept running after first
-  audio.
-- **Stages are clipped to the window.** Speech-to-text always begins while you
-  are still talking; that part was free and is not charged to your wait. On the
-  live page it is the hatched part of the bar, left of zero.
-- **Real 20 ms cadence** when feeding a file. Pushing a whole WAV as one frame
-  would make voice activity detection see something no microphone produces, and
-  every turn-detection number would be fiction.
-- **Warmup is named, not hidden.** The first inference pays model load and
-  graph compilation and is several times slower.
-
-`uv run pytest -q` checks these hold, against the committed traces, so it needs
-no models. The tests are about the numbers rather than the plumbing.
-
-## The other trace file
-
-`artifacts/scheduling-comparison.jsonl` is a recording from earlier in this
-repo's life: the same utterance run twice, once with the stages strictly
-sequential and once overlapped. Nothing produces it any more and it is not a
-claim about anything. It is kept because it is what `test_measurements.py` runs
-against — one of the two runs overlaps its stages and the other does not, so
-the interval maths has something it could get wrong.
-
-```bash
-python3 budget.py --traces artifacts/scheduling-comparison.jsonl
-```
-
-## Point it at your own agent
-
-`budget.py` reads a JSONL file of OpenTelemetry spans and does not import the
-pipeline. If your agent emits the span names in [`SPANS.md`](SPANS.md) — which
-a Pipecat agent very nearly does already — it will read your traces too:
-
-```bash
-python3 budget.py --traces /path/to/your-traces.jsonl
-```
-
-## From this repo to production
-
-Everything this repo leaves out is a decision, and each one has a production
-counterpart. If you are here from the talk, this is the map from the four
-boxes to the other eighty percent.
-
-| Here (teaching scale) | Production (the other 80%) |
-|---|---|
-| The microphone is muted while the bot speaks, so the agent cannot be interrupted | Barge-in is a policy, not a boolean: when to stop playback, when to keep listening, and how to preserve the context that was interrupted. Track false-barge-in and missed-interruption rates — aggregate latency stays green while callers are being cut off |
-| No network: microphone and speaker on one machine | Two network legs per turn, each with jitter, packet loss, a codec and a playout buffer. Budget them on both sides of the four stages |
-| One turn at a time, one person, one laptop | Fleet dashboards: P95 turn latency per stage, WER drift, audio quality, cost per conversation |
-| `uv run pytest -q` checks the measurement is honest | Eval suites: golden conversations re-run on every prompt, model or tool change |
-| Spans read from a local JSONL file | The same spans over OTLP into Langfuse, Jaeger or Honeycomb. The span contract in [`SPANS.md`](SPANS.md) is the stable part; the OTel `gen_ai.*` attribute names are still Development-stability, so the contract here is deliberately the repo's own |
-
-Descriptions of Pipecat behaviour in this repo were verified against Pipecat
-1.8.1, September 2026. If a newer Pipecat disagrees, believe the newer one and
-re-check the sections above.
 
 ## Setup notes
 
