@@ -1,16 +1,31 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-const { findChrome } = await import(`${process.env.HOME}/.claude/skills/archify/bin/visual-check.mjs`);
+
+// Screenshots the three diagram HTML pages with headless Chrome, light and
+// dark. Needs only Node and a Chrome/Chromium install; set CHROME_PATH if
+// yours lives somewhere unusual.
+function findChrome() {
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
+  const candidates = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ];
+  return candidates.find((c) => fs.existsSync(c)) || null;
+}
 
 const chrome = findChrome();
-if (!chrome) { console.error('no chrome'); process.exit(1); }
+if (!chrome) { console.error('no chrome found; set CHROME_PATH'); process.exit(1); }
 
 const dir = path.dirname(new URL(import.meta.url).pathname);
 const names = ['cascade-pipeline', 'turn-timeline', 'false-endpoint'];
 const W = 1600, H = 1000, SCALE = 2;
 
-const userDataDir = fs.mkdtempSync('/tmp/archify-shot-');
+const userDataDir = fs.mkdtempSync('/tmp/diagram-shot-');
 const child = spawn(chrome, [
   '--headless=new', '--remote-debugging-pipe', '--disable-gpu', '--hide-scrollbars',
   `--user-data-dir=${userDataDir}`, '--no-first-run', '--no-default-browser-check',
