@@ -1,11 +1,16 @@
 # Turn-detection false endpoint: captured evidence
 
-Recorded 2026-09-05 during the Phase 0 spike, pipecat 1.8.1, M4 Pro / 24GB.
+Recorded 2026-09-05 during the Phase 0 spike, Pipecat 1.8.1 on macOS.
+
+These false-endpoint traces contain no end-to-end budget window. The two other
+committed trace files that do contain budget windows mark them with
+`measured_as=tts_first_synthesized_sample_legacy`; those legacy windows are not
+comparable to `output_transport.first_audio`.
 
 ## What this shows
 
 The agent answered **before the user finished speaking**, produced a throwaway
-reply, then answered again with the real transcript. Every run of the fixture
+response, then generated again after the complete synthetic input. Every run of the fixture
 did it. `turn.was_interrupted` is `true` on the turn span.
 
 This is a false endpoint: `LocalSmartTurnAnalyzerV3` plus Silero VAD decided the
@@ -29,11 +34,11 @@ Times are milliseconds relative to the start of each conversation span.
 span             start     end     dur  detail
 conversation         0    8786    8786  
 turn                 0    8783    8782  interrupted=True
-stt                505    2117    1612  transcript='Can you tell me?'
-stt               1922    4316    2393  transcript='the weather is going to be like tomorrow afternoon.'
-llm               3783    4347     564  out="I'd"
+stt                505    2117    1612  final=True
+stt               1922    4316    2393  final=True
+llm               3783    4347     564  discarded=True
 tts               4347    5010     663  chars=3
-llm               5148    5745     598  out="I'm not aware of your current location's weather forecast. I"
+llm               5148    5745     598  discarded=False
 tts               5388    6780    1392  chars=182
 ```
 
@@ -42,11 +47,11 @@ tts               5388    6780    1392  chars=182
 span             start     end     dur  detail
 conversation         0    8803    8803  
 turn                 0    8801    8801  interrupted=True
-stt                504    1446     942  transcript='Can you tell me?'
-stt               1252    4400    3148  transcript='what the weather is going to be like tomorrow afternoon.'
-llm               3803    4411     608  out="I'd be happy to help answer your question"
+stt                504    1446     942  final=True
+stt               1252    4400    3148  final=True
+llm               3803    4411     608  discarded=True
 tts               4412    4414       2  chars=41
-llm               5214    5752     538  out="I'm not aware of your current location's weather forecast. C"
+llm               5214    5752     538  discarded=False
 tts               5463    6710    1247  chars=157
 ```
 
@@ -55,11 +60,11 @@ tts               5463    6710    1247  chars=157
 span             start     end     dur  detail
 conversation         0    8806    8806  
 turn                 0    8803    8803  interrupted=True
-stt                503    1461     958  transcript='Can you tell me?'
-stt               1267    4388    3121  transcript='what the weather is going to be like tomorrow afternoon.'
-llm               3795    4404     610  out="I'd be happy to help answer your question."
+stt                503    1461     958  final=True
+stt               1267    4388    3121  final=True
+llm               3795    4404     610  discarded=True
 tts               4405    4407       2  chars=42
-llm               5206    5774     569  out="I'm not aware of your current location's weather forecast. C"
+llm               5206    5774     569  discarded=False
 tts               5482    6713    1231  chars=157
 ```
 
@@ -68,20 +73,13 @@ tts               5482    6713    1231  chars=157
 span             start     end     dur  detail
 conversation         0    8810    8810  
 turn                 0    8806    8806  interrupted=True
-stt                503    1444     941  transcript='Can you tell me?'
-stt               1253    4369    3117  transcript='what the weather is going to be like tomorrow afternoon.'
-llm               3782    4378     596  out="I'd be happy to help answer"
+stt                503    1444     941  final=True
+stt               1253    4369    3117  final=True
+llm               3782    4378     596  discarded=True
 tts               4379    4381       2  chars=27
-llm               5181    5730     549  out="I'm not aware of your current location's weather forecast. C"
+llm               5181    5730     549  discarded=False
 tts               5441    6686    1246  chars=157
 ```
 
-## What was changed afterward
-
-`filter_incomplete_user_turns=True` on `LLMUserAggregatorParams`, so the
-benchmark measures one clean turn. The flag is set in `config.py` and named in
-the README, because a flag that silently changes headline latency numbers is
-exactly the kind of thing a reader should not have to discover for themselves.
-
-Phase 2 builds the turn-detection case studies starting from this trace.
-
+The retained trace has been reduced to metadata-only attributes. Phase 2 may
+build turn-detection case studies from this synthetic evidence.

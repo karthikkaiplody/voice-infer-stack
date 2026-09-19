@@ -1,7 +1,7 @@
 # Where Did My 800 Milliseconds Go?
 #
 #   make budget     read a recorded turn, no install needed
-#   make live       talk to the agent and watch the latency arrive (localhost:8080)
+#   make live       talk to the agent and watch the latency (127.0.0.1:8080)
 #   make viewer     open one recorded turn as an HTML waterfall
 #
 #   make setup      install python deps + pull models   (once, needs network)

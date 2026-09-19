@@ -21,6 +21,8 @@ the turn strategy decides you have stopped talking.
 import asyncio
 import sys
 import time
+import uuid
+import subprocess
 from pathlib import Path
 
 from loguru import logger
@@ -45,9 +47,26 @@ from pipecat.workers.runner import WorkerRunner
 import factory
 from config import CONFIG
 from tracing_setup import TurnSpanObserver, init_tracing
+from telemetry import SAFE_ID_PATTERN, TelemetryIdentity, configuration_snapshot
 from wav_transport import Capture, WavFileTransport
 
 TRACES = Path("artifacts/my-traces.jsonl")
+
+
+def _source_revision() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--verify", "HEAD"], text=True,
+            timeout=1).strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+CONFIG_SNAPSHOT = configuration_snapshot(
+    CONFIG, prompt_revision_id="library-information-v1",
+    source_revision=_source_revision())
+SESSION_ID = TelemetryIdentity.new(
+    CONFIG_SNAPSHOT.snapshot_id, "workload_process").session_id
 
 
 def build_pipeline(transport, *, mute_while_bot_speaks: bool = False) -> Pipeline:
@@ -77,6 +96,7 @@ def build_pipeline(transport, *, mute_while_bot_speaks: bool = False) -> Pipelin
                     )
                 ]
             ),
+            filter_incomplete_user_turns=CONFIG.filter_incomplete_user_turns,
             # THE ECHO FIX, for the microphone path only. One machine's
             # microphone and speakers with no acoustic echo cancellation means
             # the agent hears its own voice, voice activity treats it as you
@@ -87,7 +107,7 @@ def build_pipeline(transport, *, mute_while_bot_speaks: bool = False) -> Pipelin
             user_mute_strategies=[AlwaysUserMuteStrategy()]
             if mute_while_bot_speaks
             else [],
-            # NOT using filter_incomplete_user_turns: measured, it costs an
+            # Disabled by default: measured, it costs an
             # 860-token classifier call plus a ~5 s wait for speech that never
             # arrives. It treats the symptom anyway; the cause is voice
             # activity ending your turn on a clause pause.
@@ -105,15 +125,29 @@ def build_pipeline(transport, *, mute_while_bot_speaks: bool = False) -> Pipelin
     ])
 
 
+def workload_identity(mode: str, fixture: str | None) -> tuple[str, bool]:
+    """A comparable fixture ID, or a unique ID for microphone input."""
+    if fixture:
+        if not SAFE_ID_PATTERN.fullmatch(fixture):
+            raise ValueError("fixture must be a safe identifier")
+        return f"workload_{fixture}", True
+    return f"noncomparable_{mode}_{uuid.uuid4().hex}", False
+
+
 def build_worker(pipeline, *, mode: str, fixture: str | None = None,
                  conversation_id: str = "live", observers=()) -> PipelineWorker:
     """Wrap the pipeline in a worker that traces itself.
 
     `enable_tracing` is what makes Pipecat emit the `stt`, `llm` and `tts`
     spans; `enable_turn_tracking` is what wraps them in a `turn`. Everything
-    the budget and the live page report comes from these, plus the two spans
-    TurnSpanObserver adds.
+    the budget and the live page report comes from these, plus the boundary
+    spans TurnSpanObserver adds.
     """
+    workload_fixture_id, workload_comparable = workload_identity(mode, fixture)
+    identity = TelemetryIdentity.new(
+        CONFIG_SNAPSHOT.snapshot_id, workload_fixture_id,
+        session_id=SESSION_ID, conversation_id=conversation_id)
+    snapshot = CONFIG_SNAPSHOT.as_dict()
     return PipelineWorker(
         pipeline,
         params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
@@ -125,6 +159,16 @@ def build_worker(pipeline, *, mode: str, fixture: str | None = None,
             "mode": mode,
             "stack": factory.describe(),
             **({"fixture": fixture} if fixture else {}),
+            "telemetry.schema_version": "1.0.0",
+            "telemetry.session_id": identity.session_id,
+            "telemetry.conversation_id": identity.conversation_id,
+            "telemetry.configuration_snapshot_id": identity.configuration_snapshot_id,
+            "telemetry.workload_fixture_id": identity.workload_fixture_id,
+            "telemetry.workload_comparable": workload_comparable,
+            "telemetry.config.prompt_revision_id": snapshot["prompt_revision_id"],
+            "telemetry.config.cpu_architecture": snapshot["cpu_architecture"],
+            "telemetry.config.os_version": snapshot["os_version"],
+            "telemetry.config.execution_engine_id": snapshot["execution_engine_id"],
         },
     )
 

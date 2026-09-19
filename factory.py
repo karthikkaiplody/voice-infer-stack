@@ -40,6 +40,22 @@ STT_ENGINES = ("mlx", "faster-whisper")
 TTS_ENGINES = ("kokoro", "piper")
 
 
+def component_identity(config=CONFIG) -> dict[str, str]:
+    """Configured engines and the model/voice each engine will actually use."""
+    _check("VOICE_STT_ENGINE", config.stt_engine, STT_ENGINES)
+    _check("VOICE_TTS_ENGINE", config.tts_engine, TTS_ENGINES)
+    return {
+        "stt_engine": config.stt_engine,
+        "stt_model": (config.stt_model if config.stt_engine == "mlx"
+                      else config.stt_model_faster_whisper),
+        "llm_provider": "ollama",
+        "llm_model": config.llm_model,
+        "tts_engine": config.tts_engine,
+        "tts_voice": (config.tts_voice if config.tts_engine == "kokoro"
+                      else config.tts_voice_piper),
+    }
+
+
 def _check(name, value, allowed):
     if value not in allowed:
         raise SystemExit(
@@ -128,11 +144,9 @@ def list_input_devices():
 
 def describe() -> str:
     """One line naming every component, for the run log and the trace."""
-    stt = (CONFIG.stt_model if CONFIG.stt_engine == "mlx"
-           else CONFIG.stt_model_faster_whisper)
-    tts = (CONFIG.tts_voice if CONFIG.tts_engine == "kokoro"
-           else CONFIG.tts_voice_piper)
+    selected = component_identity()
     endpoint = "smart_turn" if CONFIG.use_smart_turn else "vad_timeout"
-    return (f"stt={CONFIG.stt_engine}:{stt}  llm=ollama:{CONFIG.llm_model}  "
-            f"tts={CONFIG.tts_engine}:{tts}  vad=silero  "
+    return (f"stt={selected['stt_engine']}:{selected['stt_model']}  "
+            f"llm={selected['llm_provider']}:{selected['llm_model']}  "
+            f"tts={selected['tts_engine']}:{selected['tts_voice']}  vad=silero  "
             f"endpoint={endpoint}@{CONFIG.vad_stop_secs}s")

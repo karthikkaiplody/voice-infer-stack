@@ -65,6 +65,7 @@ class Config:
     #   wait_for_transcript - also wait for STT to return a transcript.
     user_speech_timeout: float = 0.6
     wait_for_transcript: bool = True
+    filter_incomplete_user_turns: bool = False
 
     # THE 600 MS. Pipecat's stop strategy runs two timers in parallel and closes
     # the turn only when both finish: user_speech_timeout above, and a safety

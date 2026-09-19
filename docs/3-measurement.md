@@ -26,18 +26,44 @@ your own agent.
   every turn-detection number would be fiction.
 - **Warmup is named, not hidden.** The first inference pays model load and
   graph compilation and is several times slower.
+- **The primary output boundary is transport acceptance.**
+  `output_transport.first_audio` means the output transport accepted the first
+  frame: the output transport successfully wrote it, then re-pushed it
+  downstream. `tts.first_synthesized_sample` is a separate earlier boundary.
+  Neither says that the user heard playback.
+- **Conversation state is not compute.** Speaking duration, silence, endpointing
+  wait, and assistant-speaking state are reported separately from STT, LLM,
+  tool, TTS, transport, and defensible VAD compute latency.
 
 `uv run pytest -q` checks these hold, against the committed traces, so it needs
 no models. The tests are about the numbers rather than the plumbing.
 
 ## The other trace file
 
-`artifacts/scheduling-comparison.jsonl` is a recording from earlier in this
-repo's life: the same utterance run twice, once with the stages strictly
-sequential and once overlapped. Nothing produces it any more and it is not a
+`artifacts/scheduling-comparison.jsonl` is a sanitized recording from earlier
+in this repo's life: the same synthetic workload run twice, once with the stages
+strictly sequential and once overlapped. Nothing produces it any more and it is not a
 claim about anything. It is kept because it is what `test_measurements.py` runs
 against — one of the two runs overlaps its stages and the other does not, so
 the interval maths has something it could get wrong.
+
+The two committed trace files that contain end-to-end budget windows mark them
+with `measured_as=tts_first_synthesized_sample_legacy`. The false-endpoint trace
+file contains no end-to-end budget window. For the two legacy data sets, the
+readers display: “Legacy measurement: ends at first synthesized sample; not
+comparable to output_transport.first_audio.” They must not be compared with
+corrected v1 transport-acceptance measurements.
+
+All committed telemetry fixtures are synthetic or sanitized and metadata-only.
+Raw-content capture is absent and disabled by default. Any future capture must
+be an explicit local-development opt-in in a Git-ignored, session-specific
+temporary directory, with graceful-shutdown deletion and startup TTL cleanup.
+
+Comparisons require the same `workload_fixture_id`. Failed, cancelled, and
+interrupted turns are separate populations. Missing stages are unavailable,
+never zero. Median requires at least five samples and carries a small-sample
+label below 20; p95 requires at least 20. The MVP has no p99, ranking, winner,
+leaderboard, or combined score.
 
 ```bash
 python3 budget.py --traces artifacts/scheduling-comparison.jsonl
