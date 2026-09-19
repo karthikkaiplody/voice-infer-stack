@@ -6,9 +6,8 @@
 // infer an order, and does not time anything itself. That is the whole design:
 // the page and `budget.py` are two readers of one measurement.
 //
-// The input meter and the reply text are the exceptions, and they are not
-// timing. They are here because a silent pipeline and a wrong microphone look
-// identical otherwise.
+// The input meter is operational state rather than telemetry timing. Raw
+// transcript, reply, and device metadata never enter this event stream.
 
 const $ = (id) => document.getElementById(id);
 
@@ -201,11 +200,9 @@ function note(sp, s) {
     el.textContent =
       "waiting, not computing — " + Math.round(sp.duration_ms) +
       " ms of silence at vad.stop_secs=" + a["vad.stop_secs"];
-  } else if (sp.name === "stt") {
-    el.textContent = a.transcript || el.textContent;
   } else if (sp.name === "tts" && a["metrics.ttfb"] !== undefined) {
     el.textContent =
-      "first audio " + Math.round(a["metrics.ttfb"] * 1000) +
+      "first synthesized sample " + Math.round(a["metrics.ttfb"] * 1000) +
       " ms into synthesis; the rest is still being made while it plays";
   }
   if (counts[sp.name] > 1) {
@@ -220,11 +217,11 @@ function window_(sp, ended) {
   if (!ended) return;
   zero = sp.start_time_ns / 1e6;
   landed = true;
-  $("tlab").textContent = "you stopped talking → first audio";
+  $("tlab").textContent = "you stopped talking → output accepted audio";
   $("total").textContent = Math.round(sp.duration_ms).toLocaleString() + " ms";
   status(
-    Math.round(sp.duration_ms) + " ms from you stopping to the first sample of " +
-    "the reply. It is still speaking.", "busy");
+    Math.round(sp.duration_ms) + " ms from you stopping until the output " +
+    "transport accepted audio. This is not playback acknowledgment.", "busy");
 }
 
 function status(text, cls) {
@@ -258,6 +255,7 @@ new EventSource("/events").onmessage = (m) => {
       buildRows();
       $("gate").style.left = e.gate * 100 + "%";
       $("traces").textContent = e.traces;
+      $("mic").textContent = e.input_source;
       if (e.running) { $("go").disabled = true; $("halt").disabled = false; }
       break;
 
@@ -269,10 +267,6 @@ new EventSource("/events").onmessage = (m) => {
       $("mic").dataset.v = v.toFixed(2);
       break;
     }
-
-    case "devices":
-      $("mic").textContent = e.name + (e.current === null ? " (default)" : "");
-      break;
 
     case "ready":
       $("stack").textContent = e.stack;
@@ -293,14 +287,6 @@ new EventSource("/events").onmessage = (m) => {
       upsert(e.span, true);
       break;
 
-    case "heard":
-      $("n-stt").textContent = e.text;
-      break;
-
-    case "token":
-      $("n-llm").textContent += e.text;
-      break;
-
     case "turn_done":
       live = false;
       $("head").style.display = "none";
@@ -308,7 +294,7 @@ new EventSource("/events").onmessage = (m) => {
       break;
 
     case "error":
-      status(e.text, "bad");
+      status("Pipeline error: " + e.classification, "bad");
       break;
 
     case "stopped":

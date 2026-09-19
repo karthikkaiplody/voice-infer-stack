@@ -32,6 +32,8 @@ WINDOW = "e2e.speech_end_to_first_audio"
 # stages that actually compute.
 COMPUTE = ["stt", "llm", "tts"]
 BUDGET_MS = 800.0  # the human conversational window this is all measured against
+LEGACY_NOTICE = ("Legacy measurement: ends at first synthesized sample; "
+                 "not comparable to output_transport.first_audio.")
 
 
 def clip(ivs, window):
@@ -121,7 +123,9 @@ def summarize(spans, win):
 
     return {"rows": rows, "wall_ms": wall_ms, "covered_ms": covered_ms,
             "sum_ms": sum_ms, "recovered_ms": sum_ms - covered_ms,
-            "overlaps": pairs, "attrs": win["attributes"]}
+            "overlaps": pairs, "attrs": win["attributes"],
+            "legacy": win["attributes"].get("measured_as")
+            != "output_transport_accepted"}
 
 
 def render(summary, label):
@@ -133,6 +137,8 @@ def render(summary, label):
 
     print()
     print(f"  BUDGET  {fixture}  ·  {mode}  ·  {label}")
+    if summary["legacy"]:
+        print(f"  {LEGACY_NOTICE}")
     print(f"  {'-' * 66}")
     print(f"  {'stage':<18}{'ms':>9}{'share':>9}   {'':<20}")
     for r in summary["rows"]:

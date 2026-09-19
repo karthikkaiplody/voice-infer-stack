@@ -22,13 +22,17 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
 from pipecat.frames.frames import (
     TTSAudioRawFrame,
+    UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 from pipecat.processors.frame_processor import FrameDirection
+from pipecat.transports.base_output import BaseOutputTransport
 from pipecat.utils.tracing.setup import setup_tracing
+
+from telemetry import safe_span
 
 TRACER = "voice-infer-stack"
 
@@ -42,7 +46,7 @@ def span_as_dict(span) -> dict:
     ctx = span.get_span_context()
     parent = span.parent
     end = span.end_time
-    return {
+    serialized = {
         "name": span.name,
         "trace_id": f"{ctx.trace_id:032x}",
         "span_id": f"{ctx.span_id:016x}",
@@ -54,6 +58,10 @@ def span_as_dict(span) -> dict:
         "duration_ms": (end - span.start_time) / 1e6 if end else None,
         "attributes": {k: v for k, v in (span.attributes or {}).items()},
     }
+    # Pipecat providers may add prompts, transcripts, generated text, TTS text,
+    # or opaque payloads.  Every exporter and live subscriber goes through this
+    # one fail-closed metadata boundary.
+    return safe_span(serialized)
 
 
 class JsonlSpanExporter(SpanExporter):
@@ -136,14 +144,14 @@ def init_tracing(service_name: str, jsonl_path: str | Path,
 
 
 class TurnSpanObserver(BaseObserver):
-    """The two spans Pipecat does not emit, on Pipecat's own clock.
+    """The timing boundaries Pipecat does not emit, on its own clock.
 
     Pipecat traces `stt`, `llm` and `tts` and wraps them in `turn` and
     `conversation`. It does not trace the silence it sits through before
     deciding your turn is over, and it has no span for the number this repo is
-    about: from the moment you stop making noise to the moment the first
-    synthesized sample exists. Without the first, endpointing is invisible
-    because it hides inside an STT span that began while you were still
+    about: from the moment you stop making noise to the moment the output
+    transport accepts its first audio frame. Without the first, endpointing is
+    invisible because it hides inside an STT span that began while you were still
     talking. Without the second there is no defensible definition of latency.
 
     Nothing here reads a clock to decide when speech ended.
@@ -167,11 +175,38 @@ class TurnSpanObserver(BaseObserver):
         self._speech_end: float | None = None   # wall clock seconds
         self._stop_secs: float = 0.0
         self._window_open = False
+        self._first_synthesized_sample_seen = False
+        self._first_output_audio_seen = False
+        self._first_synthesized_sample_ns: int | None = None
+        self._logical_turn_state = "idle"
+        self._previous_logical_turn_outcome: str | None = None
         self._seen: set = set()
         self._history: deque = deque(maxlen=max_frames)
 
     async def on_push_frame(self, data: FramePushed):
         if data.direction != FrameDirection.DOWNSTREAM:
+            return
+        f = data.frame
+        # A synthesized frame first exists upstream of the output transport.
+        # Keep that boundary separate from the moment the output transport
+        # accepts it; neither boundary claims the user heard playback.
+        if isinstance(f, TTSAudioRawFrame):
+            if isinstance(data.source, BaseOutputTransport):
+                if (self._first_synthesized_sample_seen
+                        and not self._first_output_audio_seen):
+                    now = max(time.time_ns(), self._first_synthesized_sample_ns or 0)
+                    self._first_output_audio_seen = True
+                    self._instant_boundary(
+                        "output_transport.first_audio", now,
+                        "output_transport_accepted")
+                    self._open_and_close_window(now)
+            elif not self._first_synthesized_sample_seen:
+                now = time.time_ns()
+                self._first_synthesized_sample_seen = True
+                self._first_synthesized_sample_ns = now
+                self._instant_boundary(
+                    "tts.first_synthesized_sample", now,
+                    "tts_frame_pushed")
             return
         # The same frame is pushed at every hop in the pipeline. Without this
         # a turn emits one span per processor.
@@ -182,16 +217,40 @@ class TurnSpanObserver(BaseObserver):
         if len(self._seen) > len(self._history):
             self._seen = set(self._history)
 
-        f = data.frame
-        if isinstance(f, VADUserStartedSpeakingFrame):
+        if isinstance(f, UserStartedSpeakingFrame):
+            self._start_logical_turn()
+        elif isinstance(f, VADUserStartedSpeakingFrame):
             self._speech_end = None
         elif isinstance(f, VADUserStoppedSpeakingFrame):
             self._speech_end = f.timestamp - f.stop_secs
             self._stop_secs = f.stop_secs
         elif isinstance(f, UserStoppedSpeakingFrame):
             self._close_turn_detection()
-        elif isinstance(f, TTSAudioRawFrame):
-            self._open_and_close_window()
+
+    def _start_logical_turn(self):
+        """Reset first-boundary and window state for an actual new user turn.
+
+        VAD resume frames deliberately do not call this method: they can occur
+        during a false endpoint inside the same logical turn.
+        """
+        self._previous_logical_turn_outcome = (
+            "interrupted_or_unwritten"
+            if self._logical_turn_state == "active"
+            else self._logical_turn_state)
+        self._logical_turn_state = "active"
+        self._speech_end = None
+        self._stop_secs = 0.0
+        self._window_open = False
+        self._first_synthesized_sample_seen = False
+        self._first_output_audio_seen = False
+        self._first_synthesized_sample_ns = None
+
+    @staticmethod
+    def _instant_boundary(name: str, timestamp_ns: int, measured_as: str):
+        """Emit an explicit point-in-time boundary without claiming duration."""
+        span = trace.get_tracer(TRACER).start_span(name, start_time=timestamp_ns)
+        span.set_attribute("measured_as", measured_as)
+        span.end(end_time=timestamp_ns)
 
     def _close_turn_detection(self):
         """The wait is over: the pipeline has accepted that you stopped talking."""
@@ -211,8 +270,8 @@ class TurnSpanObserver(BaseObserver):
         span.end(end_time=end)
         self._window_open = True
 
-    def _open_and_close_window(self):
-        """First synthesized sample. Write the budget window, start to finish.
+    def _open_and_close_window(self, end: int):
+        """Output transport accepted first audio. Write the budget window.
 
         Written in one go, backdated to the end of speech, rather than opened
         early and closed here. A span that is opened and never ended is never
@@ -226,7 +285,6 @@ class TurnSpanObserver(BaseObserver):
         tracer = trace.get_tracer(TRACER)
         span = tracer.start_span("e2e.speech_end_to_first_audio",
                                  start_time=int(self._speech_end * 1e9))
-        end = time.time_ns()
         span.set_attribute("mode", self._mode)
         if self._fixture:
             span.set_attribute("fixture", self._fixture)
@@ -237,4 +295,6 @@ class TurnSpanObserver(BaseObserver):
             pass
         span.set_attribute("duration_ms",
                            round(end / 1e6 - self._speech_end * 1000, 1))
+        span.set_attribute("measured_as", "output_transport_accepted")
         span.end(end_time=end)
+        self._logical_turn_state = "completed"
