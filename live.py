@@ -1,6 +1,6 @@
 """Talk to the agent and watch the latency arrive.
 
-    make live          # then open http://localhost:8080
+    make live          # then open http://127.0.0.1:8080
 
 Click Start, speak into your machine's microphone, and the reply plays through
 its speakers. The page draws the turn as a waterfall: what ran, when it started,
@@ -14,8 +14,9 @@ cannot disagree -- there is only one measurement. This page used to map pipeline
 frames to bars itself, which was a second implementation of "what happened and
 when", and every bug in it came from the two drifting apart.
 
-Two things here are deliberately NOT spans, because they are not timing:
-the input level meter, and the reply text as it is generated.
+The input level meter is deliberately not a span because it is operational
+state, not latency. Raw transcript and reply content never enter telemetry or
+the browser event stream.
 
 The microphone is the one attached to this machine, not the browser's. That
 keeps the whole thing to a local pipeline plus a page of events, with no WebRTC
@@ -39,6 +40,7 @@ import agent
 import budget
 import factory
 from config import CONFIG
+from telemetry import filter_metadata
 from tracing_setup import init_tracing
 
 UI = Path(__file__).parent / "ui"
@@ -81,14 +83,53 @@ def hello() -> dict:
     return {
         "kind": "hello",
         "now_ns": time.time_ns(),
-        "stack": factory.describe(),
+        "stack": browser_stack_description(),
         "gate": CONFIG.vad_min_volume,
         "budget_ms": budget.BUDGET_MS,
         "stages": budget.STAGES,
         "window": budget.WINDOW,
         "traces": str(TRACES),
         "running": RUNNING,
+        "input_source": ("default" if CONFIG.audio_device is None
+                         else "configured_index"),
     }
+
+
+def browser_stack_description() -> str:
+    """A browser-safe description built only from validated identifiers."""
+    try:
+        selected = factory.component_identity()
+    except (Exception, SystemExit):
+        return "configuration_invalid"
+    keyed = {
+        "settings.engine": selected["stt_engine"],
+        "settings.model": selected["stt_model"],
+        "gen_ai.provider.name": selected["llm_provider"],
+        "gen_ai.request.model": selected["llm_model"],
+        "voice_id": selected["tts_voice"],
+    }
+    if filter_metadata(keyed) != keyed:
+        return "configuration_invalid"
+    endpoint = "smart_turn" if CONFIG.use_smart_turn else "vad_timeout"
+    return (f"stt={selected['stt_engine']}:{selected['stt_model']}  "
+            f"llm={selected['llm_provider']}:{selected['llm_model']}  "
+            f"tts={selected['tts_engine']}:{selected['tts_voice']}  "
+            f"endpoint={endpoint}")
+
+
+def browser_error_classification(error: BaseException) -> str:
+    """Map exceptions to a fixed browser-safe classification."""
+    if isinstance(error, asyncio.CancelledError):
+        classification = "cancelled"
+    elif isinstance(error, (ValueError, TypeError)):
+        classification = "validation_error"
+    elif isinstance(error, (OSError, TimeoutError)):
+        classification = "transport_error"
+    else:
+        classification = "pipeline_error"
+    return filter_metadata({
+        "error.classification": classification,
+    }).get("error.classification", "internal_error")
 
 
 def on_span(kind: str, span: dict):
@@ -107,11 +148,11 @@ def on_span(kind: str, span: dict):
 
 
 class PageObserver(BaseObserver):
-    """The two things on the page that are not timing.
+    """Operational state on the page that is not timing.
 
     Deliberately small, and deliberately NOT a source of any number. Everything
-    with a millisecond on it comes from the spans. This reports the input level
-    and the reply text, neither of which any span carries.
+    with a millisecond on it comes from the spans. This reports only the input
+    level and content-free turn state.
 
     Subclasses BaseObserver DIRECTLY. Mixing it in behind BaseObserver puts
     BaseObserver first in the MRO, so its no-op `on_push_frame` wins and this
@@ -128,8 +169,6 @@ class PageObserver(BaseObserver):
         from pipecat.frames.frames import (
             BotStoppedSpeakingFrame,
             InputAudioRawFrame,
-            LLMTextFrame,
-            TranscriptionFrame,
             UserStartedSpeakingFrame,
         )
 
@@ -152,10 +191,6 @@ class PageObserver(BaseObserver):
 
         if isinstance(f, UserStartedSpeakingFrame):
             emit("turn_start")
-        elif isinstance(f, TranscriptionFrame) and f.text:
-            emit("heard", text=f.text)
-        elif isinstance(f, LLMTextFrame) and f.text:
-            emit("token", text=f.text)
         elif isinstance(f, BotStoppedSpeakingFrame):
             emit("turn_done")
 
@@ -179,12 +214,8 @@ async def run_agent():
             input_device_index=CONFIG.audio_device,
         )
     )
-    devs = factory.list_input_devices()
-    cur = CONFIG.audio_device
-    name = next((d["name"] for d in devs
-                 if d["index"] == cur or (cur is None and d["default"])), "?")
-    logger.info(f"microphone: [{cur if cur is not None else 'default'}] {name}")
-    emit("devices", devices=devs, current=cur, name=name)
+    source = "default" if CONFIG.audio_device is None else "configured index"
+    logger.info(f"microphone input: {source}")
 
     # The pipeline is agent.py's, not a second copy of it. A live turn and a
     # WAV turn go through exactly the same stages, in the same order, under the
@@ -198,14 +229,14 @@ async def run_agent():
     RUNNER = runner
     await runner.add_workers(worker)
 
-    emit("ready", stack=factory.describe())
+    emit("ready", stack=browser_stack_description())
     try:
         await runner.run()
     except asyncio.CancelledError:
         pass
     except Exception as e:
         logger.exception("pipeline failed")
-        emit("error", text=f"{type(e).__name__}: {e}")
+        emit("error", classification=browser_error_classification(e))
     finally:
         RUNNING = False
         RUNNER = None
@@ -261,7 +292,7 @@ async def start(request):
     # Held, not fire-and-forget. An untracked task keeps the event loop alive
     # after aiohttp has shut down, so ctrl+c appeared to do nothing.
     TASK = asyncio.create_task(run_agent())
-    return web.json_response({"ok": True, "stack": factory.describe()})
+    return web.json_response({"ok": True, "stack": browser_stack_description()})
 
 
 async def stop(request):
@@ -278,6 +309,21 @@ async def stop(request):
 
 async def index(request):
     return web.FileResponse(UI / "index.html")
+
+
+@web.middleware
+async def local_control_only(request, handler):
+    """Reject cross-origin or forged-host mutations of local controls."""
+    if request.path in {"/start", "/stop"}:
+        host = request.headers.get("Host", "")
+        allowed_host = (host == "127.0.0.1"
+                        or host.startswith("127.0.0.1:"))
+        origin = request.headers.get("Origin")
+        allowed_origin = origin is None or origin == f"http://{host}"
+        if not allowed_host or not allowed_origin:
+            return web.json_response(
+                {"ok": False, "error": "local_request_required"}, status=403)
+    return await handler(request)
 
 
 async def release_clients(app):
@@ -335,14 +381,15 @@ def main():
     TRACES.unlink(missing_ok=True)
     ok, _ = init_tracing("voice-live", TRACES, live_callback=on_span)
 
-    app = web.Application()
+    app = web.Application(middlewares=[local_control_only])
     app.on_startup.append(boot)
     app.on_shutdown.append(release_clients)
     app.on_cleanup.append(shutdown)
     app.add_routes([web.get("/", index), web.get("/events", sse),
                     web.post("/start", start), web.post("/stop", stop),
                     web.static("/ui", UI)])
-    logger.info(f"open http://localhost:{args.port}")
+    host = "127.0.0.1"
+    logger.info(f"open http://{host}:{args.port}")
     logger.info(f"stack: {factory.describe()}")
     logger.info(f"tracing: {ok}, spans -> {TRACES}")
     logger.info(f"afterwards: uv run python budget.py --traces {TRACES}")
@@ -350,7 +397,8 @@ def main():
     from aiohttp.web_runner import GracefulExit
 
     try:
-        web.run_app(app, port=args.port, print=None, handle_signals=True)
+        web.run_app(app, host=host, port=args.port, print=None,
+                    handle_signals=True)
     except (KeyboardInterrupt, GracefulExit):
         # GracefulExit is how aiohttp reports SIGINT. Letting it escape prints
         # a traceback for what is a normal, requested exit.

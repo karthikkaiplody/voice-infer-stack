@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voice-infer-stack.local/telemetry/v1.schema.json",
+  "title": "Voice Infer Stack telemetry event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "event_name", "timestamp_ns", "identities", "attributes"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "event_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+    "event_name": {
+      "enum": [
+        "user_speech.started", "user_speech.ended",
+        "endpointing.started", "endpointing.resolved",
+        "stt.started", "stt.first", "stt.final",
+        "llm.started", "llm.first_token",
+        "tool.requested", "tool.running", "tool.progress", "tool.completed", "tool.error", "tool.cancelled",
+        "tts.started", "tts.first_synthesized_sample",
+        "output_transport.first_audio",
+        "turn.completed", "turn.interrupted", "turn.failed"
+      ]
+    },
+    "timestamp_ns": {"type": "integer", "minimum": 0},
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "conversation_id", "turn_id", "trace_id", "span_id", "parent_span_id", "logical_tool_call_id", "tool_attempt_id", "configuration_snapshot_id", "workload_fixture_id"],
+      "properties": {
+        "session_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "conversation_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "turn_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "trace_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "span_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "parent_span_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "logical_tool_call_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "tool_attempt_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "configuration_snapshot_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
+        "workload_fixture_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"}
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": {"type": ["string", "number", "integer", "boolean", "null"]}
+    }
+  }
+}

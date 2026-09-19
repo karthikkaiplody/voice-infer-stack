@@ -73,7 +73,9 @@ def collect(spans, win):
                     "overlaps speech to text rather than adding to it.")
     return {"mode": win["attributes"].get("mode", "?"),
             "fixture": win["attributes"].get("fixture", ""),
-            "total": total, "stages": stages, "note": note}
+            "total": total, "stages": stages, "note": note,
+            "legacy": win["attributes"].get("measured_as")
+            != "output_transport_accepted"}
 
 
 def render(turns, scale_ms):
@@ -88,6 +90,7 @@ section{margin-bottom:38px;padding:22px 24px;border:1px solid #e4e2dd;
 h2{font-size:15px;margin:0 0 2px}
 h2 span{color:#78756e;font-weight:400}
 p.tot{margin:0 0 20px;color:#78756e;font-size:13px}
+.legacy{margin:12px 0;color:#9a3412;font-weight:600}
 .row{display:grid;grid-template-columns:150px 1fr 74px;gap:12px;
  align-items:center;margin-bottom:11px}
 .lbl b{display:block;font-weight:600;font-size:13px}
@@ -125,8 +128,10 @@ p.tot{margin:0 0 20px;color:#78756e;font-size:13px}
         out.append(
             f'<section><h2>{html.escape(t["mode"])} '
             f'<span>· {html.escape(t["fixture"])}</span></h2>'
-            f'<p class="tot">{t["total"]:.0f} ms from the moment you stopped '
-            f'speaking to the first sound coming back</p>'
+            + (f'<p class="legacy">{html.escape(budget.LEGACY_NOTICE)}</p>'
+               if t["legacy"] else '')
+            + f'<p class="tot">{t["total"]:.0f} ms from the moment you stopped '
+            f'speaking to the recorded output boundary</p>'
             f'{"".join(rows)}'
             + (f'<p class="legend">{html.escape(t["note"])}</p>'
                if t.get("note") else "")
