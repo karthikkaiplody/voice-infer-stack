@@ -66,14 +66,17 @@ add up to more than 100% because the stages overlap; that is the second thing
 to sit with.
 
 Those are one machine's numbers, on one utterance, and they are not yours.
+The committed number is also a legacy measurement ending at the first
+synthesized sample. The readers label it as not comparable to corrected
+`output_transport.first_audio` measurements.
 
 **2 — install.** Needs [uv](https://docs.astral.sh/uv/),
 [Ollama](https://ollama.com) and ffmpeg. Everything else downloads on first run.
 
-**3 — watch it happen.** `make live`, then open http://localhost:8080, press
+**3 — watch it happen.** `make live`, then open http://127.0.0.1:8080, press
 start and ask it something. The page draws the turn as a waterfall while it
-runs: when your turn was declared over, when the transcript existed, when the
-first token arrived, when the first audio sample existed.
+runs: when your turn was declared over, when model work ran, when the first
+synthesized sample existed, and when the output transport accepted audio.
 
 Every bar on that page is an OpenTelemetry span, streamed to the browser as
 Pipecat emits it and drawn at its real start and end. They are the same spans
@@ -85,6 +88,13 @@ uv run python budget.py --traces artifacts/live-traces.jsonl
 
 prints the budget for the turn you just watched. The page and the number cannot
 disagree, because there is only one measurement.
+
+Telemetry is metadata-only by default. Provider payloads are filtered before
+they reach the trace file or browser, so raw audio, transcripts, prompts,
+generated text, TTS text, tool arguments/results, raw errors, credentials, and
+machine identifiers are not persisted or displayed. The primary output metric
+is `output_transport.first_audio`: the transport accepted a frame. It is not a
+claim that the user heard playback. See [the versioned contract](SPANS.md).
 
 **No microphone?** The same pipeline runs from a WAV file, at real 20 ms
 cadence: `make trace`. Details in [Part 1](docs/1-swap-and-see.md).
@@ -121,7 +131,9 @@ Four short parts. Each stands alone; together they are the talk, written down.
 | `ui/` | The page. Plain HTML, CSS and one JS file, no build step. |
 | `config.py` | Every model, rate, prompt and threshold, in one frozen object. |
 | `factory.py` | Builds the four stages from config. The seam that makes components swappable. |
-| `tracing_setup.py` | OpenTelemetry wiring, the JSONL exporter, and the two spans Pipecat does not emit. |
+| `tracing_setup.py` | OpenTelemetry wiring, metadata filtering, and the timing boundaries Pipecat does not emit. |
+| `telemetry.py`, `telemetry_contract/` | Contract v1 validation, stable identity, immutable safe configuration snapshots, and privacy filtering. |
+| `telemetry_fixtures/` | Four synthetic metadata-only lifecycle fixtures. |
 | `budget.py` | Reads a trace file, prints the per-stage budget. Standard library only. |
 | `analysis.py` | Span interval maths: overlap, union, median. Standard library only. |
 | `viewer.py` | Renders one recorded turn as a standalone HTML waterfall. Standard library only. |
@@ -137,9 +149,8 @@ Four short parts. Each stands alone; together they are the talk, written down.
 
 ## Setup notes
 
-Apple Silicon is the tested path (MLX Whisper, CoreML, MPS). Elsewhere, set
-`VOICE_STT_ENGINE=faster-whisper` and expect different absolute numbers. The
-shape should hold. The numbers will not.
+The initial release supports macOS only. Apple Silicon is the tested path (MLX
+Whisper, CoreML, MPS). Other platforms are outside the initial support scope.
 
 ## Licence
 

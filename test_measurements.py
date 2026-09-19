@@ -9,15 +9,16 @@ models and no GPU:
 
     uv run pytest -q
 
-`artifacts/scheduling-comparison.jsonl` is a fixed recording, kept exactly as
-it was captured. It holds the same utterance run two ways, one overlapping its
+`artifacts/scheduling-comparison.jsonl` is a sanitized fixed recording. It
+holds the same synthetic workload run two ways, one overlapping its
 stages and one strictly sequential, which is what makes it the right input for
 these tests: the interval maths has something to get wrong. Nothing in the repo
 produces it any more, and nothing should regenerate it.
 """
 
 import json
-import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,37 @@ def by_mode(runs, mode):
 def test_every_run_has_a_budget_window(runs):
     """Without the window span there is no defensible definition of latency."""
     assert runs, "no e2e.speech_end_to_first_audio spans found"
+
+
+def test_legacy_budget_is_clearly_noncomparable(capsys, spans, runs):
+    window, summary = runs[0]
+    budget.render(summary, "test")
+    assert budget.LEGACY_NOTICE in capsys.readouterr().out
+
+
+def test_committed_viewer_matches_generated_legacy_output(tmp_path):
+    generated = tmp_path / "viewer.html"
+    subprocess.run(
+        [sys.executable, "viewer.py", "--traces",
+         "artifacts/reference-traces.jsonl", "--out", str(generated)],
+        check=True, capture_output=True, text=True)
+    assert budget.LEGACY_NOTICE in generated.read_text()
+    assert generated.read_text() == Path("artifacts/viewer.html").read_text()
+
+
+def test_only_budget_artifacts_have_legacy_window_markers():
+    marked = (
+        Path("artifacts/reference-traces.jsonl"),
+        Path("artifacts/scheduling-comparison.jsonl"),
+    )
+    for path in marked:
+        windows = budget.windows(budget.load_spans(path))
+        assert windows
+        assert all(w["attributes"].get("measured_as")
+                   == "tts_first_synthesized_sample_legacy" for w in windows)
+    false_endpoint = budget.load_spans(
+        Path("artifacts/turn-detection/false-endpoint-traces.jsonl"))
+    assert budget.windows(false_endpoint) == []
 
 
 def test_both_builds_present(runs):
@@ -119,14 +151,6 @@ def test_overlap_never_exceeds_the_smaller_stage(runs):
 
 # --- the thing that would invalidate the whole comparison -------------------
 
-def runs_for(spans):
-    return [(w, budget.summarize(spans, w)) for w in budget.windows(spans)]
-
-
-def norm(text):
-    return re.sub(r"[^a-z0-9 ]", "", (text or "").lower()).strip()
-
-
 def _models(spans, stage, window):
     return {sp["attributes"].get("gen_ai.request.model")
             for sp in spans
@@ -171,30 +195,6 @@ def test_streaming_reads_config_rather_than_hardcoding(spans, runs):
                 f"streaming used {sorted(got)} but config.py says "
                 f"{CONFIG.llm_model}"
             )
-
-
-def test_both_builds_transcribed_the_same_words(spans, runs):
-    """If the builds heard different things, they are not comparable.
-
-    Compared on normalized text: raw comparison fails on punctuation and
-    casing, which is noise, not drift.
-    """
-    per_mode = {}
-    for w, _ in runs_for(spans):
-        mode = w["attributes"].get("mode")
-        lo, hi = w["start_time_ns"], w["end_time_ns"]
-        for sp in spans:
-            t = sp["attributes"].get("transcript")
-            if (sp["name"] == "stt" and t
-                    and sp["end_time_ns"] > lo and sp["start_time_ns"] < hi):
-                per_mode.setdefault(mode, set()).add(norm(t))
-
-    assert len(per_mode) >= 2, (
-        f"need both builds to compare transcripts, saw {sorted(per_mode)}")
-    texts = set().union(*per_mode.values())
-    assert len(texts) == 1, (
-        "builds heard different words: "
-        + "; ".join(f"{m}={sorted(v)}" for m, v in per_mode.items()))
 
 
 def test_no_discarded_work_in_the_reference_run(runs):
@@ -255,7 +255,7 @@ def test_config_has_every_field_the_builds_use():
         "input_sample_rate", "output_sample_rate", "chunk_ms",
         "vad_stop_secs", "trailing_silence_s",
         "use_smart_turn", "user_speech_timeout", "wait_for_transcript",
-        "stt_ttfs_p99",
+        "stt_ttfs_p99", "filter_incomplete_user_turns",
         "llm_temperature", "llm_seed", "llm_max_tokens", "system_prompt",
         "warmup_reps", "measured_reps",
     }
