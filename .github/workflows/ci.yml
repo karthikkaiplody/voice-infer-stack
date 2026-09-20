@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: Page (type-check, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  python:
+    name: Python tests (macOS, Apple Silicon)
+    # MLX Whisper is Apple-only, and so is the supported platform.
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv lock --check
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  stdlib-tools:
+    name: Nothing-installed tools (Python 3.9, standard library only)
+    # The README promises these run on the Python that ships with macOS, with
+    # nothing installed. This is that promise, checked.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: python -m voice_agent.analysis.budget
+      - run: python -m voice_agent.analysis.viewer --out "$RUNNER_TEMP/viewer.html"
