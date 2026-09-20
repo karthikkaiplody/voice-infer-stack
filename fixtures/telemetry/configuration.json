@@ -1,0 +1,25 @@
+{
+  "snapshot_id": "config_fixture_v1",
+  "source_revision": "synthetic_fixture_v1",
+  "provider_ids": {
+    "stt": "synthetic_stt",
+    "llm": "synthetic_llm",
+    "tts": "synthetic_tts"
+  },
+  "model_ids": {
+    "stt": "fixture-model",
+    "llm": "fixture-model",
+    "tts": "fixture-voice"
+  },
+  "endpointing_settings": {
+    "use_smart_turn": false,
+    "user_speech_timeout": 0.2,
+    "vad_stop_secs": 0.4,
+    "wait_for_transcript": true
+  },
+  "hardware_class": "synthetic",
+  "cpu_architecture": "synthetic",
+  "os_version": "synthetic",
+  "execution_engine_id": "fixture-replay",
+  "privacy_mode": "metadata-only"
+}

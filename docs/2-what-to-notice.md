@@ -27,7 +27,7 @@ the wait it saved. The live page shows this directly: a stage that ran twice in
 one turn is marked, because the first one was wasted. A captured example, with
 every run laid out span by span, is in
 [`artifacts/turn-detection/`](../artifacts/turn-detection/). It was recorded
-before the span contract in [`SPANS.md`](../SPANS.md) existed, so `viewer.py`
+before the span contract in [`SPANS.md`](../SPANS.md) existed, so `analysis/viewer.py`
 cannot draw it; to see a false endpoint as a waterfall, cut the silence dial
 yourself — [swap 2 in Part 1](1-swap-and-see.md#three-swaps-to-try-in-order).
 
@@ -53,6 +53,20 @@ transcript gets you: the pipeline waiting up to a second for something that
 had already arrived. `make live` sets both honestly for a local stack; set
 them back and watch the first row grow. (Pipecat will log that the STT wait
 "collapsed to 0s". That is the point, not a bug.)
+
+## Also on the page: the lookup is not the problem
+
+The library agent looks up its notes before it answers, and the page draws that
+as its own row, *Knowledge lookup*, between endpointing and the language model.
+It is a local word-matching search, and on the library's notes it takes a few
+microseconds, which the page shows as *\<1 ms*. Adding knowledge to an agent does
+not cost time on the clock at that step.
+
+What can cost time is what you hand the model afterwards: more notes are a
+longer prompt to read, so the *Language model* row is where a bigger
+`VOICE_RETRIEVAL_TOP_K` shows up. Hosted retrieval, which crosses a network to a
+vector database, would be a different row with a very different length. The row
+is there so that when you add one, you can see it.
 
 ---
 

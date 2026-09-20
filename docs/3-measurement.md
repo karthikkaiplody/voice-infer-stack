@@ -34,16 +34,26 @@ your own agent.
 - **Conversation state is not compute.** Speaking duration, silence, endpointing
   wait, and assistant-speaking state are reported separately from STT, LLM,
   tool, TTS, transport, and defensible VAD compute latency.
+- **A stage that cannot be measured is said, not drawn as zero.** The server
+  tells the page which stages the running source can report. The live agent
+  registers no tools and mutes the microphone while it speaks, so *tool calls*
+  and *interrupted* are marked *Not instrumented* there. A stage that did not
+  run in a turn is *Not observed*, and an agent without notes has no knowledge
+  lookup at all. None of these is ever a bar of length zero.
+- **The contract is versioned, and old traces stay valid.** `1.1.0` added the
+  knowledge lookup and nothing else. A reader that only knows `1.0.0` refuses a
+  `1.1.0` event instead of guessing. See [`SPANS.md`](../SPANS.md).
 
-`uv run pytest -q` checks these hold, against the committed traces, so it needs
-no models. The tests are about the numbers rather than the plumbing.
+`make test-all` checks these hold, against the committed traces, so it needs no
+models: the Python tests in `tests/`, then the page's in `ui/tests/`. The tests
+are about the numbers rather than the plumbing.
 
 ## The other trace file
 
 `artifacts/scheduling-comparison.jsonl` is a sanitized recording from earlier
 in this repo's life: the same synthetic workload run twice, once with the stages
 strictly sequential and once overlapped. Nothing produces it any more and it is not a
-claim about anything. It is kept because it is what `test_measurements.py` runs
+claim about anything. It is kept because it is what `tests/analysis/test_measurements.py` runs
 against — one of the two runs overlaps its stages and the other does not, so
 the interval maths has something it could get wrong.
 
@@ -66,7 +76,7 @@ label below 20; p95 requires at least 20. The MVP has no p99, ranking, winner,
 leaderboard, or combined score.
 
 ```bash
-python3 budget.py --traces artifacts/scheduling-comparison.jsonl
+python3 -m voice_agent.analysis.budget --traces artifacts/scheduling-comparison.jsonl
 ```
 
 ## Point it at your own agent
@@ -76,7 +86,7 @@ pipeline. If your agent emits the span names in [`SPANS.md`](../SPANS.md) — wh
 a Pipecat agent very nearly does already — it will read your traces too:
 
 ```bash
-python3 budget.py --traces /path/to/your-traces.jsonl
+python3 -m voice_agent.analysis.budget --traces /path/to/your-traces.jsonl
 ```
 
 ---

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "event_id", "event_name", "timestamp_ns", "identities", "attributes"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
     "event_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"},
     "event_name": {
       "enum": [
@@ -14,6 +14,7 @@
         "endpointing.started", "endpointing.resolved",
         "stt.started", "stt.first", "stt.final",
         "llm.started", "llm.first_token",
+        "retrieval.started", "retrieval.completed",
         "tool.requested", "tool.running", "tool.progress", "tool.completed", "tool.error", "tool.cancelled",
         "tts.started", "tts.first_synthesized_sample",
         "output_transport.first_audio",

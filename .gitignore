@@ -6,6 +6,9 @@ __pycache__/
 
 # Node leftovers from tooling
 build/
+ui/node_modules/
+ui/dist/
+ui/coverage/
 
 # Local tool config, not part of the project
 .mcp.json

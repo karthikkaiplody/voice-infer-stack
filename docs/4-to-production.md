@@ -11,7 +11,8 @@ boxes to the other eighty percent.
 | The microphone is muted while the bot speaks, so the agent cannot be interrupted | Barge-in is a policy, not a boolean: when to stop playback, when to keep listening, and how to preserve the context that was interrupted. Track false-barge-in and missed-interruption rates — aggregate latency stays green while callers are being cut off |
 | No network: microphone and speaker on one machine | Two network legs per turn, each with jitter, packet loss, a codec and a playout buffer. Budget them on both sides of the four stages |
 | One turn at a time, one person, one laptop | Fleet dashboards: P95 turn latency per stage, WER drift, audio quality, cost per conversation |
-| `uv run pytest -q` checks the measurement is honest | Eval suites: golden conversations re-run on every prompt, model or tool change |
+| The agent knows one small markdown file, found by matching words, and answers only from it | Knowledge that changes and is far larger: an index kept fresh, retrieval by meaning as well as by words, and per-question checks that the answer was grounded in what was found. The lookup here takes microseconds; a hosted one is a network call with its own row in the budget |
+| `make test-all` checks the measurement is honest | Eval suites: golden conversations re-run on every prompt, model or tool change |
 | Spans read from a local JSONL file | The same spans over OTLP into Langfuse, Jaeger or Honeycomb. The span contract in [`SPANS.md`](../SPANS.md) is the stable part; the OTel `gen_ai.*` attribute names are still Development-stability, so the contract here is deliberately the repo's own |
 
 Descriptions of Pipecat behaviour in this repo were verified against Pipecat
