@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import sys
 import time
 from functools import partial
 from pathlib import Path
@@ -602,6 +603,18 @@ def create_app() -> web.Application:
     return app
 
 
+def configure_logging():
+    """Console logging at INFO.
+
+    Pipecat logs speech-to-text transcripts and the words it is about to speak at
+    DEBUG, and loguru prints DEBUG by default. The page and the trace file carry
+    metadata only, so the terminal must not be the one place spoken and generated
+    text shows up (a terminal is easily copied, recorded or redirected to a file).
+    """
+    logger.remove()
+    logger.add(sys.stderr, level="INFO")
+
+
 def main():
     global SERVER_MODE
     import argparse
@@ -610,6 +623,7 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--mode", choices=("fixture", "live"), default="live")
     args = ap.parse_args()
+    configure_logging()
     SERVER_MODE = args.mode
 
     host = "127.0.0.1"
