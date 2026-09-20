@@ -199,8 +199,8 @@ def test_export_configuration_drops_everything_unsafe():
         "privacy_mode": "anything the caller says",
         "prompt": "You are a helpful assistant",
         "api_key": "sk-secret",
-        "audio_device": "Karthik's MacBook Microphone",
-        "path": "/Users/karthik/project",
+        "audio_device": "Someone's MacBook Microphone",
+        "path": "/Users/someone/project",
     }
     clean = live.export_configuration(raw)
     assert set(clean) <= set(live._CONFIG_KEYS)
