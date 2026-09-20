@@ -398,3 +398,30 @@ def test_switching_away_cancels_a_replay_in_progress(switchable, monkeypatch):
         return task.cancelled() or task.cancelling() > 0
 
     assert serve(go) is True
+
+
+# ------------------------------------------------------------ console logging --
+
+@pytest.fixture
+def restore_logging():
+    yield
+    from loguru import logger
+    logger.remove()
+    logger.add(sys.stderr)
+
+
+def test_the_console_does_not_print_spoken_or_generated_text(capsys, restore_logging):
+    """Pipecat logs transcripts and TTS text at DEBUG; the terminal must not show them."""
+    from loguru import logger
+    live.configure_logging()
+    logger.debug("Transcription: [CANARY spoken words]")
+    logger.debug("Generating TTS [CANARY generated words]")
+    logger.info("mode: live")
+    err = capsys.readouterr().err
+    assert "CANARY" not in err
+    assert "mode: live" in err                      # ordinary INFO output is still there
+
+
+def test_main_sets_up_console_logging_before_anything_can_log():
+    source = Path(live.__file__).read_text()
+    assert "    configure_logging()\n    SERVER_MODE = args.mode" in source          # the call, not the def
