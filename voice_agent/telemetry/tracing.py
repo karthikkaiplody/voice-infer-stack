@@ -1,0 +1,399 @@
+"""OpenTelemetry wiring: spans to a JSONL file, and to the live page.
+
+Jaeger is deliberately not used. Requiring docker to see where the time went
+would defeat the point of a clone-and-run repo, so spans land in a file that
+`budget.py` and `viewer.py` read with nothing installed.
+
+The same spans drive the live page. That is the point of `LiveSpanProcessor`:
+the browser is not shown a second, hand-maintained version of what happened, it
+is shown the trace itself as it is produced. One source of truth, two readers.
+"""
+
+import json
+import threading
+import time
+from collections import deque
+from pathlib import Path
+
+from loguru import logger
+from opentelemetry import trace
+from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
+from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+from pipecat.frames.frames import (
+    BotStoppedSpeakingFrame,
+    ErrorFrame,
+    FatalErrorFrame,
+    TTSAudioRawFrame,
+    UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
+    VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
+)
+from pipecat.observers.base_observer import BaseObserver, FramePushed
+from pipecat.processors.frame_processor import FrameDirection
+from pipecat.transports.base_output import BaseOutputTransport
+from pipecat.utils.tracing.setup import setup_tracing
+
+from voice_agent.telemetry.contract import RuntimeEventEmitter, safe_span
+
+TRACER = "voice-infer-stack"
+
+# Pipecat's `ErrorCategory` values, mapped to fixed controlled codes. The error
+# frame's text and exception are never read: they can carry provider payloads.
+_ERROR_CODES = {
+    "authentication": "provider_authentication",
+    "authorization": "provider_authorization",
+    "invalid_request": "provider_invalid_request",
+    "rate_limit": "provider_rate_limit",
+    "quota": "provider_quota",
+    "connectivity": "provider_connectivity",
+    "server": "provider_server",
+    "application": "application_error",
+}
+
+
+def error_classification(frame) -> str:
+    """A fixed, browser-safe code for an error frame. Never the error text."""
+    category = getattr(getattr(frame, "category", None), "value", None)
+    return _ERROR_CODES.get(category, "pipeline_error")
+
+
+def _configured_endpointing_strategy() -> str:
+    """The end-of-turn policy the running pipeline was actually built with."""
+    try:
+        from voice_agent.pipeline import factory
+        return factory.endpointing_strategy()
+    except Exception:
+        return "unclassified"
+
+
+def span_as_dict(span) -> dict:
+    """One span as the JSON object SPANS.md describes.
+
+    Works on a span that has not ended yet, where `end_time` is None. The live
+    page needs exactly that: a bar it can start drawing while the stage runs.
+    """
+    ctx = span.get_span_context()
+    parent = span.parent
+    end = span.end_time
+    serialized = {
+        "name": span.name,
+        "trace_id": f"{ctx.trace_id:032x}",
+        "span_id": f"{ctx.span_id:016x}",
+        "parent_span_id": f"{parent.span_id:016x}" if parent else None,
+        # Wall-clock ns. Interval arithmetic (not duration sums) is what
+        # proves overlap, so both endpoints are preserved.
+        "start_time_ns": span.start_time,
+        "end_time_ns": end,
+        "duration_ms": (end - span.start_time) / 1e6 if end else None,
+        "attributes": {k: v for k, v in (span.attributes or {}).items()},
+    }
+    # Pipecat providers may add prompts, transcripts, generated text, TTS text,
+    # or opaque payloads.  Every exporter and live subscriber goes through this
+    # one fail-closed metadata boundary.
+    return safe_span(serialized)
+
+
+class JsonlSpanExporter(SpanExporter):
+    """Appends one JSON object per span. Timestamps kept in ns, unmodified."""
+
+    def __init__(self, path: str | Path):
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+
+    def export(self, spans) -> SpanExportResult:
+        lines = [json.dumps(span_as_dict(s)) for s in spans]
+        with self._lock:
+            with self._path.open("a") as f:
+                f.write("\n".join(lines) + "\n")
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
+
+class LiveSpanProcessor(SpanProcessor):
+    """Hand every span to a callback the moment it starts and the moment it ends.
+
+    The JSONL exporter sits behind a BatchSpanProcessor, which is right for a
+    file and useless for a page that should light up while the stage is still
+    running. This one is synchronous and unbuffered.
+
+    `on_start` carries a span whose `end_time` is None and whose attributes are
+    mostly still unset: enough to place the left edge of a bar, not enough to
+    label it. `on_end` carries the finished article.
+
+    The callback runs on whatever thread ended the span, which for a local
+    model is usually not the event loop. Anything it touches must be safe there;
+    `live.py` hands straight over with `call_soon_threadsafe`.
+    """
+
+    def __init__(self, callback):
+        self._callback = callback
+
+    def on_start(self, span, parent_context=None):
+        self._safely("span_start", span)
+
+    def on_end(self, span: ReadableSpan):
+        self._safely("span_end", span)
+
+    def _safely(self, kind, span):
+        """A broken page must not cost you the trace.
+
+        Span processors run inside Pipecat's own tracing path, which catches
+        the exception, logs it at WARNING, and gives up on the span. One
+        TypeError here and `stt`, `llm` and `tts` quietly stop being traced at
+        all -- in the file as well as on the page.
+        """
+        try:
+            self._callback(kind, span_as_dict(span))
+        except Exception as e:
+            logger.warning(f"live span callback failed: {e}")
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
+
+def init_tracing(service_name: str, jsonl_path: str | Path,
+                 live_callback=None, console: bool = False):
+    """Start tracing. Spans go to the file, and optionally to a live callback."""
+    exporter = JsonlSpanExporter(jsonl_path)
+    ok = setup_tracing(service_name=service_name, exporter=exporter,
+                       console_export=console)
+    if ok and live_callback is not None:
+        trace.get_tracer_provider().add_span_processor(
+            LiveSpanProcessor(live_callback))
+    return ok, exporter
+
+
+class TurnSpanObserver(BaseObserver):
+    """The timing boundaries Pipecat does not emit, on its own clock.
+
+    Pipecat traces `stt`, `llm` and `tts` and wraps them in `turn` and
+    `conversation`. It does not trace the silence it sits through before
+    deciding your turn is over, and it has no span for the number this repo is
+    about: from the moment you stop making noise to the moment the output
+    transport accepts its first audio frame. Without the first, endpointing is
+    invisible because it hides inside an STT span that began while you were still
+    talking. Without the second there is no defensible definition of latency.
+
+    Nothing here reads a clock to decide when speech ended.
+    `VADUserStoppedSpeakingFrame` carries both the moment the VAD made its
+    call and the silence it had to hear first, so the end of speech is
+    `timestamp - stop_secs` -- Pipecat's own arithmetic, not a guess from
+    config. It is also why a mid-sentence pause cannot corrupt the number: if
+    you resume, the next `VADUserStartedSpeakingFrame` discards the candidate.
+
+    Subclasses BaseObserver DIRECTLY, and every observer here must. Mixing it
+    in behind BaseObserver puts BaseObserver first in the MRO, so its no-op
+    `on_push_frame` wins, the pipeline reports healthy, and nothing is ever
+    observed.
+    """
+
+    def __init__(self, *, mode: str, fixture: str | None = None,
+                 event_emitter: RuntimeEventEmitter | None = None,
+                 endpoint_strategy: str | None = None,
+                 max_frames: int = 200, **kwargs):
+        super().__init__(**kwargs)
+        self._mode = mode
+        self._fixture = fixture
+        self._event_emitter = event_emitter
+        # What decided the turn ended, from the configuration that built the
+        # pipeline. Not a constant: smart-turn runs would otherwise be labeled
+        # as VAD timeouts.
+        self._endpoint_strategy = (endpoint_strategy
+                                   or _configured_endpointing_strategy())
+        self._vad_speech_start_ns: int | None = None
+        self._seen_errors: deque = deque(maxlen=32)
+        self._speech_end: float | None = None   # wall clock seconds
+        self._stop_secs: float = 0.0
+        self._window_open = False
+        self._first_synthesized_sample_seen = False
+        self._first_output_audio_seen = False
+        self._first_synthesized_sample_ns: int | None = None
+        self._logical_turn_state = "idle"
+        self._previous_logical_turn_outcome: str | None = None
+        self._seen: set = set()
+        self._history: deque = deque(maxlen=max_frames)
+
+    async def on_push_frame(self, data: FramePushed):
+        f = data.frame
+        if isinstance(f, ErrorFrame):
+            # Errors travel upstream, so this comes before the direction filter.
+            self._on_error(f)
+            return
+        if data.direction != FrameDirection.DOWNSTREAM:
+            return
+        # A synthesized frame first exists upstream of the output transport.
+        # Keep that boundary separate from the moment the output transport
+        # accepts it; neither boundary claims the user heard playback.
+        if isinstance(f, TTSAudioRawFrame):
+            if isinstance(data.source, BaseOutputTransport):
+                if (self._first_synthesized_sample_seen
+                        and not self._first_output_audio_seen):
+                    now = max(time.time_ns(), self._first_synthesized_sample_ns or 0)
+                    self._first_output_audio_seen = True
+                    self._instant_boundary(
+                        "output_transport.first_audio", now,
+                        "output_transport_accepted")
+                    self._emit_event("output_transport.first_audio", now,
+                                     stage="output_transport")
+                    self._open_and_close_window(now)
+            elif not self._first_synthesized_sample_seen:
+                now = time.time_ns()
+                self._first_synthesized_sample_seen = True
+                self._first_synthesized_sample_ns = now
+                self._instant_boundary(
+                    "tts.first_synthesized_sample", now,
+                    "tts_frame_pushed")
+                self._emit_event("tts.first_synthesized_sample", now,
+                                 stage="tts")
+            return
+        # The same frame is pushed at every hop in the pipeline. Without this
+        # a turn emits one span per processor.
+        if data.frame.id in self._seen:
+            return
+        self._seen.add(data.frame.id)
+        self._history.append(data.frame.id)
+        if len(self._seen) > len(self._history):
+            self._seen = set(self._history)
+
+        if isinstance(f, UserStartedSpeakingFrame):
+            self._start_logical_turn()
+        elif isinstance(f, VADUserStartedSpeakingFrame):
+            self._speech_end = None
+            # Where the user's speech began: the VAD's decision time, minus the
+            # speech it had to hear first. The logical-turn frame arrives later.
+            self._vad_speech_start_ns = int((f.timestamp - f.start_secs) * 1e9)
+        elif isinstance(f, VADUserStoppedSpeakingFrame):
+            self._speech_end = f.timestamp - f.stop_secs
+            self._stop_secs = f.stop_secs
+        elif isinstance(f, UserStoppedSpeakingFrame):
+            self._close_turn_detection()
+        elif isinstance(f, BotStoppedSpeakingFrame):
+            # Only a bot that spoke for THIS turn completes it. A stop frame
+            # with no accepted first audio is left without an outcome.
+            emitter = self._event_emitter
+            if emitter is not None and emitter.has_event(
+                    "output_transport.first_audio"):
+                self._emit_event("turn.completed", time.time_ns(),
+                                 attributes={"turn.outcome": "completed"})
+
+    def _on_error(self, frame):
+        """A pipeline error fails the turn only if the turn had not yet been
+        answered, or the error is fatal. After first audio a recoverable error
+        is not this turn's outcome."""
+        emitter = self._event_emitter
+        if emitter is None or not emitter.active or frame.id in self._seen_errors:
+            return
+        self._seen_errors.append(frame.id)
+        fatal = isinstance(frame, FatalErrorFrame) or bool(getattr(frame, "fatal", False))
+        if fatal or not emitter.has_event("output_transport.first_audio"):
+            self._emit_event("turn.failed", time.time_ns(), attributes={
+                "turn.outcome": "failed",
+                "error.classification": error_classification(frame)})
+
+    def _start_logical_turn(self):
+        """Reset first-boundary and window state for an actual new user turn.
+
+        VAD resume frames deliberately do not call this method: they can occur
+        during a false endpoint inside the same logical turn.
+        """
+        self._previous_logical_turn_outcome = (
+            "interrupted_or_unwritten"
+            if self._logical_turn_state == "active"
+            else self._logical_turn_state)
+        self._logical_turn_state = "active"
+        self._speech_end = None
+        self._stop_secs = 0.0
+        self._window_open = False
+        self._first_synthesized_sample_seen = False
+        self._first_output_audio_seen = False
+        self._first_synthesized_sample_ns = None
+        if self._event_emitter is not None:
+            now = time.time_ns()
+            start, self._vad_speech_start_ns = self._vad_speech_start_ns, None
+            try:
+                self._event_emitter.start_turn(
+                    start if start is not None and start <= now else now)
+            except Exception:
+                logger.warning("telemetry event emission failed")
+
+    def _emit_event(self, name: str, timestamp_ns: int, *, attributes=None,
+                    stage: str | None = None):
+        """Publish a local-view event. Never lets the browser path hurt a turn."""
+        if self._event_emitter is None or not self._event_emitter.active:
+            return
+        try:
+            self._event_emitter.emit(name, timestamp_ns, attributes=attributes,
+                                     stage=stage)
+        except Exception:
+            logger.warning("telemetry event emission failed")
+
+    @staticmethod
+    def _instant_boundary(name: str, timestamp_ns: int, measured_as: str):
+        """Emit an explicit point-in-time boundary without claiming duration."""
+        span = trace.get_tracer(TRACER).start_span(name, start_time=timestamp_ns)
+        span.set_attribute("measured_as", measured_as)
+        span.end(end_time=timestamp_ns)
+
+    def _close_turn_detection(self):
+        """The wait is over: the pipeline has accepted that you stopped talking."""
+        if self._speech_end is None:
+            return
+        tracer = trace.get_tracer(TRACER)
+        span = tracer.start_span("turn_detection",
+                                 start_time=int(self._speech_end * 1e9))
+        end = time.time_ns()
+        span.set_attribute("strategy", self._endpoint_strategy)
+        span.set_attribute("vad.stop_secs", self._stop_secs)
+        span.set_attribute("wait_ms",
+                           round(end / 1e6 - self._speech_end * 1000, 1))
+        # How the moment was observed, kept on the span so a row is never
+        # silently treated as a like-for-like measurement of a different one.
+        span.set_attribute("measured_as", "vad_frame_timestamp")
+        span.end(end_time=end)
+        self._window_open = True
+        speech_end_ns = int(self._speech_end * 1e9)
+        self._emit_event("user_speech.ended", speech_end_ns)
+        self._emit_event("endpointing.started", speech_end_ns,
+                         attributes={"strategy": self._endpoint_strategy},
+                         stage="endpointing")
+        self._emit_event("endpointing.resolved", end, stage="endpointing")
+
+    def _open_and_close_window(self, end: int):
+        """Output transport accepted first audio. Write the budget window.
+
+        Written in one go, backdated to the end of speech, rather than opened
+        early and closed here. A span that is opened and never ended is never
+        exported, so a turn the agent failed to answer would leave the file
+        holding a window that silently never appears -- and the page waiting on
+        a bar that never arrives.
+        """
+        if not self._window_open or self._speech_end is None:
+            return
+        self._window_open = False
+        tracer = trace.get_tracer(TRACER)
+        span = tracer.start_span("e2e.speech_end_to_first_audio",
+                                 start_time=int(self._speech_end * 1e9))
+        span.set_attribute("mode", self._mode)
+        if self._fixture:
+            span.set_attribute("fixture", self._fixture)
+        try:
+            from voice_agent.pipeline import factory
+            span.set_attribute("stack", factory.describe())
+        except Exception:
+            pass
+        span.set_attribute("duration_ms",
+                           round(end / 1e6 - self._speech_end * 1000, 1))
+        span.set_attribute("measured_as", "output_transport_accepted")
+        span.end(end_time=end)
+        self._logical_turn_state = "completed"

@@ -2,10 +2,15 @@
 
 The repository-owned event contract is
 [`telemetry_contract/v1.schema.json`](telemetry_contract/v1.schema.json).
-Every event carries `schema_version: "1.0.0"`, a unique event ID, a nanosecond
+Every event carries a `schema_version` (`"1.0.0"` or `"1.1.0"`), a unique event ID, a nanosecond
 timestamp, stable identities, and controlled metadata. Unknown schema versions
-fail closed. `telemetry.py` validates the rules that JSON Schema cannot express,
+fail closed. `telemetry/contract.py` validates the rules that JSON Schema cannot express,
 including event order, span parents, turn identity, and tool retry lifecycles.
+
+**Versions.** `1.1.0` adds the retrieval stage (two events, three attributes) and
+nothing else. Traces written under `1.0.0` stay valid. A consumer that only knows
+`1.0.0` rejects a `1.1.0` event outright instead of misreading it, and a `1.0.0`
+event that names a retrieval event is invalid.
 
 ## Timing boundaries
 
@@ -16,7 +21,8 @@ user_speech.started                 user_speech.ended
 endpointing.started                 endpointing.resolved
 stt.started                         stt.first
 stt.final                           llm.started
-llm.first_token                     tool.requested
+llm.first_token                     retrieval.started  (1.1.0)
+retrieval.completed  (1.1.0)         tool.requested
 tool.running                        tool.progress
 tool.completed                      tool.error
 tool.cancelled                      tts.started
@@ -37,11 +43,32 @@ re-pushes that frame downstream after `_internal_write_audio_frame` succeeds.
 The end-to-end window closes at that later transport-acceptance timestamp and
 carries `measured_as=output_transport_accepted`.
 
-Contract v1 is fully defined and fixture-validated. The current Pipecat runtime
-emits its existing stage spans plus the instrumented synthesis, transport, and
-end-to-end boundaries; it does not yet emit every named v1 lifecycle event.
-Synthetic fixtures cover the complete lifecycle examples. Expanded runtime
-event emission belongs to the future live-ingestion milestone.
+The contract defines more than the live runtime can truthfully report.
+Synthetic fixtures cover the complete lifecycle. The live agent emits the user
+speech, endpointing, STT, retrieval, LLM, TTS and output-transport events and the
+`turn.completed` / `turn.failed` outcomes. It emits no `tool.*` events (the agent
+registers no tools) and never `turn.interrupted` (the microphone is muted while
+the agent speaks). The page says so with `capabilities` instead of drawing an
+empty row as zero.
+
+### The retrieval stage (1.1.0)
+
+An agent that has knowledge looks up the notes that answer the user's question
+before the model is asked. The lookup is one stage between `endpointing.resolved`
+and `llm.started`:
+
+- `retrieval.started` and `retrieval.completed` bound the lookup. It is a local
+  search, so it is measured in milliseconds; it is not a network call.
+- `retrieval.completed` carries `retrieval.match_count` (an integer, `0` when
+  nothing matched), `retrieval.method` (a controlled code such as `bm25`), and,
+  when something matched, `retrieval.top_source`.
+- `retrieval.top_source` is the section label from the repository's own notes
+  (for example `library.opening-hours`), validated as a controlled code. The
+  question and the retrieved text are content, and are never emitted.
+- An agent without knowledge has no retrieval stage. The page shows the row as
+  not instrumented rather than as zero.
+
+The agent's spoken greeting is not part of any turn and produces no events.
 
 User speaking, user silence, endpointing wait, and assistant speaking are
 conversation state. They are not compute latency. VAD processing time is a
@@ -71,9 +98,10 @@ cleanup. It must never be enabled by default.
 
 ## Synthetic fixtures and comparisons
 
-The four files in `telemetry_fixtures/` are synthetic metadata-only examples:
-a completed turn, a slow blocking-tool turn, an interrupted turn, and a failed
-tool turn with a retry. Fixtures must pass `validate_trace` and must never be
+The files in `fixtures/telemetry/` are synthetic metadata-only examples: a
+completed turn, a slow blocking-tool turn, an interrupted turn, a failed tool
+turn with a retry (all `1.0.0`), and a grounded answer with a retrieval stage
+(`1.1.0`). Fixtures must pass `validate_trace` and must never be
 copied from customer or developer sessions.
 
 Direct comparisons require matching `workload_fixture_id`. Failed, cancelled,
@@ -92,12 +120,12 @@ and reports where the time went. If your voice agent emits the spans below, it
 will read your traces too:
 
 ```bash
-uv run python budget.py --traces /path/to/your-traces.jsonl
+uv run python -m voice_agent.analysis.budget --traces /path/to/your-traces.jsonl
 ```
 
 ### File format
 
-One JSON object per line. This is what `tracing_setup.JsonlSpanExporter` writes,
+One JSON object per line. This is what `JsonlSpanExporter` (`telemetry/tracing.py`) writes,
 and any OTel exporter can be adapted to it in a few lines.
 
 ```json

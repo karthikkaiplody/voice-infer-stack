@@ -1,0 +1,8 @@
+id = "library"
+title = "Riverside Public Library information line"
+description = "Answers questions about opening hours, borrowing, renewals, fines, library cards and study rooms from a markdown knowledge file."
+prompt = "prompt.md"
+greeting = "Hello, this is the Riverside Public Library information line. How can I help?"
+
+[knowledge]
+files = ["knowledge/library.md"]

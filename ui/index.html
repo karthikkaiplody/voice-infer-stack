@@ -1,64 +1,12 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Voice agent · live trace</title>
-<link rel="stylesheet" href="/ui/styles.css">
-</head>
-<body>
-<main>
-
-<header>
-  <h1>Voice agent</h1>
-  <span class="sub">live trace</span>
-</header>
-<p class="stack" id="stack">&nbsp;</p>
-
-<div class="bar-top">
-  <button id="go" class="primary">Start listening</button>
-  <button id="halt" disabled>Stop</button>
-  <div class="spacer"></div>
-  <div class="clock">
-    <div class="l" id="tlab">you stopped talking &rarr; output accepted audio</div>
-    <div class="n" id="total">&mdash;</div>
-  </div>
-</div>
-
-<div class="status" id="st"><span class="led"></span>
-  <span id="stx">Idle. Use headphones, or the agent hears itself.</span></div>
-
-<div class="mic">
-  <span class="ml">input</span>
-  <div class="meter"><div id="lvl"></div><div class="gate" id="gate"></div></div>
-  <span class="mn" id="mic">&mdash;</span>
-</div>
-
-<p class="axis-label">milliseconds since you stopped talking</p>
-
-<div class="trace">
-  <div class="ticks" id="ticks">
-    <div class="mark zero" id="zero"><span>you stop</span></div>
-    <div class="mark budget" id="budget"><span>800</span></div>
-    <div class="head" id="head"></div>
-  </div>
-  <div id="rows"></div>
-</div>
-
-<p class="hint" id="hint">Nothing has been traced yet. Press start and ask it
-something &mdash; try <em>what time do you close on Sunday?</em></p>
-
-<footer>
-  Every bar is an OpenTelemetry span, placed at its real start and end. Two bars
-  covering the same slice of the axis ran at the same time.<br>
-  Zero is the moment you stopped making noise. A bar that begins left of zero
-  started while you were still talking, and that part is free: it is why
-  <code>budget.py</code> clips to the window.<br>
-  Dashed red is 800&nbsp;ms, roughly what human turn-taking costs. The same
-  spans are on disk: <code id="traces">artifacts/live-traces.jsonl</code><br>
-  Swap a component: <code>VOICE_TTS_ENGINE=piper make live</code>
-</footer>
-
-</main>
-<script src="/ui/app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voice agent observability</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

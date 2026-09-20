@@ -1,0 +1,37 @@
+.axisRow, .row { display: grid; grid-template-columns: 250px 1fr; }
+.axisRow { border-bottom: 1px solid var(--line); min-height: 26px; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row { min-height: 52px; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+
+.labelCol { padding: 8px 14px 8px 16px; border-right: 1px solid var(--line-strong); display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 12px; color: var(--faint); }
+.row .labelCol strong { color: var(--ink); font-size: 13px; font-weight: 500; }
+.status { color: var(--dim); }
+.note { color: var(--faint); font-size: 11px; }
+
+.lane { position: relative; min-height: 26px; }
+.tickLabel { position: absolute; top: 5px; transform: translateX(-50%); font: 10px var(--mono); color: var(--faint); }
+.grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.zero { background: var(--accent); opacity: 0.7; }
+
+.bar { position: absolute; top: 17px; height: 16px; min-width: 3px; border-radius: 3px; background: var(--dim); }
+.open { background-image: repeating-linear-gradient(45deg, transparent 0 5px, rgb(255 255 255 / 0.25) 5px 10px); opacity: 0.8; }
+.marker { position: absolute; top: 15px; width: 10px; height: 10px; margin-left: -5px; transform: translateY(6px) rotate(45deg); background: var(--ink); border: 2px solid var(--panel); }
+
+.vad { background: #8b949e; }
+.endpointing { background: #d29922; }
+.stt { background: #a371f7; }
+.retrieval { background: #db61a2; }
+.llm { background: #58a6ff; }
+.tools { background: #f0883e; }
+.tts { background: #3fb950; }
+.output { background: #2ea4a4; }
+
+.s_not_instrumented .labelCol strong, .s_not_in_scenario .labelCol strong,
+.s_not_observed .labelCol strong, .s_waiting .labelCol strong { color: var(--dim); }
+.s_not_instrumented .status, .s_not_in_scenario .status, .s_not_observed .status { color: var(--faint); font-style: italic; }
+.s_started_no_end .status { color: var(--warn); }
+
+.legend { margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; }
+
+@media (max-width: 720px) { .axisRow, .row { grid-template-columns: 150px 1fr; } }

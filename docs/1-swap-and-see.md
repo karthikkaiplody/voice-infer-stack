@@ -6,6 +6,14 @@ The point of this repo is not reading about latency — it is watching the shape
 of a turn change when you change one variable. Everything on this page is
 hands-on.
 
+## Without models or a microphone
+
+`make demo` opens the page on recorded turns, with nothing to install but the
+page itself: five scenarios you can replay, including a grounded answer with its
+knowledge lookup. It is the same page as `make live`; the switch in the header
+moves between the two. The numbers are synthetic, so it teaches how to read the page,
+not what your machine does.
+
 ## Without a microphone
 
 Same pipeline, same stages, same spans, fed from a WAV file at real 20 ms
@@ -36,7 +44,7 @@ specific about how you talk:
 
 ## Turn a knob, watch the shape change
 
-Every component is chosen in `factory.py` and set from the environment, so a
+Every component is chosen in `pipeline/factory.py` and set from the environment, so a
 swap is one variable, not an edit:
 
 | Knob | Values | What it changes |
@@ -44,7 +52,9 @@ swap is one variable, not an edit:
 | `VOICE_STT_ENGINE` | `mlx`, `faster-whisper` | MLX is Apple Silicon only; faster-whisper runs anywhere |
 | `VOICE_STT_MODEL` | any MLX Whisper id | `whisper-tiny` is ~15x faster than `large-v3-turbo-q4` here |
 | `VOICE_TTS_ENGINE` | `kokoro`, `piper` | both local, both download on first use |
-| `VOICE_LLM_MODEL` | any Ollama model | `llama3.2:1b`, `qwen2.5:0.5b`, … |
+| `VOICE_LLM_MODEL` | any Ollama model | `make live` uses `llama3.2:3b`. `llama3.2:1b` is faster but misreads the library's notes (it says the library is closed on Sundays) |
+| `VOICE_AGENT` | a folder name under `agents/` | who the assistant is and what it knows. Empty means the original general assistant with no lookup. `make live` sets `library`; see [`agents/README.md`](../agents/README.md) |
+| `VOICE_RETRIEVAL_TOP_K` | integer | how many notes the agent hands the model per question. More is more to read, and a longer prompt |
 | `VOICE_VAD_STOP_SECS` | seconds | how long to wait in silence before deciding you are done |
 | `VOICE_VAD_MIN_VOLUME` | 0–1 | how loud counts as speech. Machine-specific; see the meter |
 | `VOICE_USER_SPEECH_TIMEOUT` | seconds | a second timer stacked on the first. See [insight 3](2-what-to-notice.md#3-two-default-timeouts-can-cost-more-than-any-model) |
@@ -66,9 +76,25 @@ stack: stt=mlx:mlx-community/whisper-large-v3-turbo-q4  llm=ollama:llama3.2:3b  
 **What is not swappable, and why.** Silero is the only local VAD Pipecat ships,
 so there is no second option to offer. Both Whisper engines are *segmented*:
 neither emits a partial transcript while you are still speaking. That is a
-property of the model, not the engine, and no swap in `factory.py` changes it.
+property of the model, not the engine, and no swap in `pipeline/factory.py` changes it.
 It is also a large part of what hosted streaming speech-to-text actually sells
 you.
+
+## Give it something to know
+
+The library agent is not a model trick, it is a folder: a prompt, a greeting and a
+markdown file of facts. On every question it looks up the notes that share words
+with what you asked, hands them to the model, and answers only from them. Ask it
+something the notes do not cover and it should say so instead of guessing.
+
+```bash
+VOICE_AGENT=library make live     # what make live already does
+VOICE_AGENT= make live            # the general assistant: no notes, no lookup
+```
+
+To write your own, copy `agents/library/` and change the notes. The guide is in
+[`agents/README.md`](../agents/README.md). The one thing to know first: the search
+matches words, not meaning, so the notes need the words people actually say.
 
 ## Three swaps to try, in order
 
