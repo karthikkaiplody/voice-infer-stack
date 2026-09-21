@@ -24,6 +24,8 @@
 .bad { color: var(--bad); }
 
 .notice { margin: 0 0 14px; padding: 8px 12px; border: 1px solid var(--warn); border-radius: 8px; color: var(--warn); font-size: 13px; }
+.notice p { margin: 0; }
+.notice ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.6; }
 
 .footer { margin-top: 22px; color: var(--faint); font-size: 12px; line-height: 1.8; }
 

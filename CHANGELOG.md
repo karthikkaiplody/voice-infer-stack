@@ -26,6 +26,10 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ### Changed
 
+- The silent-microphone warning on the page is now a short list of steps that starts
+  with the Mac's own input setting (System Settings → Sound → Input) and keeps
+  `make devices` and `VOICE_AUDIO_DEVICE` as the fallback, instead of sending
+  everyone straight to the terminal. It still does not name the device.
 - The guide's three swaps in [Part 1](docs/1-swap-and-see.md) now describe what
   they measure. Two of them did not reproduce as written: the safety-net timer had
   no effect, and the smaller model made the turn slower, not the same. The false

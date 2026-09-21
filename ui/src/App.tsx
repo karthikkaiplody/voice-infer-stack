@@ -2,6 +2,7 @@ import { ConfigSummary } from "./components/ConfigSummary";
 import { CurrentState } from "./components/CurrentState";
 import { EventLog } from "./components/EventLog";
 import { Header } from "./components/Header";
+import { InputSilentNotice } from "./components/InputSilentNotice";
 import { LiveControls } from "./components/LiveControls";
 import { OutcomeCard } from "./components/OutcomeCard";
 import { PrimaryMetric } from "./components/PrimaryMetric";
@@ -22,13 +23,7 @@ export function App() {
       <LiveControls />
       <TuningPanel />
       {state.notice !== null && <p className={layout.notice} role="alert">{state.notice}</p>}
-      {state.inputSilent && state.runtime === "listening" && (
-        <p className={layout.notice} role="alert">
-          No sound is reaching the agent: the microphone is delivering silence. Your system's default
-          input may be a virtual device. Stop, run <code>make devices</code>, and start again with{" "}
-          <code>VOICE_AUDIO_DEVICE=&lt;number&gt; make live</code>.
-        </p>
-      )}
+      {state.inputSilent && state.runtime === "listening" && <InputSilentNotice />}
       <section className={layout.hero} aria-label="Current turn">
         <CurrentState />
         <PrimaryMetric />
