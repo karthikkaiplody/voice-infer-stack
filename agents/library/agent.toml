@@ -1,8 +1,8 @@
 id = "library"
 title = "Riverside Public Library information line"
-description = "Answers questions about opening hours, borrowing, renewals, fines, library cards and study rooms from a markdown knowledge file."
+description = "Answers questions about opening hours, borrowing, renewals, fines, library cards and study rooms, and suggests books from a small catalog, all from markdown knowledge files."
 prompt = "prompt.md"
-greeting = "Hello, this is the Riverside Public Library information line. How can I help?"
+greeting = "Hello, this is the Riverside Public Library information line. I can help with hours, borrowing, and book suggestions. What would you like to know?"
 
 [knowledge]
-files = ["knowledge/library.md"]
+files = ["knowledge/library.md", "knowledge/catalog.md", "knowledge/summaries.md"]

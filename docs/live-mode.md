@@ -70,6 +70,8 @@ detected: try a lower value.
 ## The library agent
 
 `make live` runs an agent whose notes are a small library's opening hours, loans
-and fines. It says hello when you start, looks up its notes before each answer,
-and answers only from them. The notes live in [`agents/library/`](../agents/library/),
+and fines, plus a catalog of nineteen real books with a summary of each. Ask it for
+a mystery, something for an eight-year-old, or what a book is about. It says hello
+when you start, looks up its notes before each answer, and answers only from them.
+The library is made up. The notes live in [`agents/library/`](../agents/library/),
 and [`agents/README.md`](../agents/README.md) shows how to write your own agent.

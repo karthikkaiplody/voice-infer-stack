@@ -8,8 +8,13 @@ agents/library/
   agent.toml          who it is, and which files it uses
   prompt.md           how it behaves: persona and rules, no facts
   knowledge/
-    library.md        what it knows
+    library.md        hours, loans, fines, cards, rooms
+    catalog.md        the shelves: a few books per genre, and where to find them
+    summaries.md      one short summary per book
 ```
+
+The library and its shelves are made up. The books are real, and the summaries
+are written for this demo.
 
 Run one with `VOICE_AGENT=library` (`make live` already does). With no agent
 selected, the assistant is the original general one from `config.py`, with no
@@ -79,6 +84,11 @@ People often ask: what are the late fees, how much is the fine, what happens if 
   read on every turn and never looked up.
 - A question that matches nothing is answered with "I do not have that
   information", which is the right outcome. Check that it does.
+- Give the agent a job in the prompt, not only facts in the notes. The library
+  agent could not suggest a book until its prompt said it may, and only from the
+  notes. Small models are sensitive to the prompt's wording: a longer prompt once
+  flipped a fine of 10 cents to 25. After you change one, ask your agent its
+  factual questions again.
 
 ## What the page can see
 
