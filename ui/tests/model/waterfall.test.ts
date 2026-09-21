@@ -46,6 +46,13 @@ describe("measured stages come from recorded timestamps", () => {
     expect(wf.slowest).toEqual({ label: "Language model", latencyMs: 80 });
   });
 
+  it("answered too early: a short wait and fast first audio, then the turn is interrupted", () => {
+    const wf = build("false-endpoint");
+    expect(row(wf, "endpointing")).toMatchObject({ status: "measured", startMs: 0, endMs: 400, durationMs: 400 });
+    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", endMs: 770 });
+    expect(row(wf, "tools").status).toBe("not_in_scenario");
+  });
+
   it("failed tool: one row per attempt, and no audio stages", () => {
     const wf = build("failed-tool");
     const tools = wf.rows.filter((r) => r.stage === "tools");
