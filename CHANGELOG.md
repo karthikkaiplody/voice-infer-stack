@@ -9,6 +9,15 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ### Added
 
+- A Node check up front. `make setup-demo`, `make ui-build`, `make ui-test` and the
+  targets that build the page stop in the first second when Node is missing or
+  older than 20.19 / 22.12, name the version and path they found, and say how to
+  install a newer one. Before, an old Node failed after the long Python install,
+  or as an error from the build tools. A test keeps the check in step with
+  `engines` in `ui/package.json`.
+- `make ui-build` and `make ui-test` say to run `make setup-demo` when the page's
+  dependencies are not installed.
+
 - An *Answered too early* replay scenario: a one-second pause is read as the end of
   the turn, the agent answers fast, and the turn ends interrupted. It is the
   false-endpoint lesson in the page, using contract `1.0.0` events.
@@ -28,6 +37,9 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ### Fixed
 
+- `make live` on a fresh clone served "The UI is not built yet" (HTTP 503) unless
+  `make demo` had been run first, so the README's live path did not work as
+  written. `make live` now builds the page first, as `make demo` does.
 - `make trace` failed with `no 'e2e.speech_end_to_first_audio' spans` whenever the
   turn closed before the last transcript arrived, because that transcript started
   a new logical turn and discarded the open budget window. The window now survives
