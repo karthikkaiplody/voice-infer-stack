@@ -25,7 +25,7 @@ agents/          one folder per agent: its prompt and its notes (edit these)
 fixtures/        audio/ (WAV utterances)  telemetry/ (recorded contract events)
 telemetry_contract/   the event contract, as a JSON Schema
 artifacts/       recorded turns everyone can read
-docs/            the four-part guide, this page, and the README's images
+docs/            the four-part guide, how it works, live mode, this page, and the README's images
 diagrams/        the diagrams, as HTML plus the script that renders them
 ```
 

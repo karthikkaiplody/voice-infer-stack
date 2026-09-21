@@ -5,6 +5,16 @@ All notable changes to this project are recorded here. It follows
 [Semantic Versioning](https://semver.org/). The event contract is versioned
 separately (see [SPANS.md](SPANS.md)); this release ships contract `1.1.0`.
 
+## [Unreleased]
+
+### Changed
+
+- The README is now a short front page: the pitch, a screenshot, the quick start,
+  and a table of links, with the details in collapsible sections. The sequence
+  diagram, where the numbers come from, privacy, and the live-mode notes moved,
+  unchanged, to [docs/how-it-works.md](docs/how-it-works.md) and
+  [docs/live-mode.md](docs/live-mode.md).
+
 ## [1.0.0] - 2026-09-20
 
 The first release: the companion to the IEEE RTC Conference 2026 talk
