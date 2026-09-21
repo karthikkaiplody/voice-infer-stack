@@ -23,7 +23,7 @@ make setup-demo        # Python and Node dependencies. No models needed.
 make test-all          # Python tests, then the page's type-check, tests and build
 ```
 
-You need [uv](https://docs.astral.sh/uv/) and Node.js 20.19+ or 22.12+. Nothing
+You need `brew install portaudio`, [uv](https://docs.astral.sh/uv/) and Node.js 20.19+ or 22.12+. Nothing
 in the test suite needs a microphone, a model or the network. `make demo` opens
 the page on recorded turns.
 

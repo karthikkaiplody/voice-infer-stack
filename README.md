@@ -29,8 +29,8 @@ Whisper, which needs it. Other platforms are outside the scope of this release.
 
 | You want | You need |
 |---|---|
-| Anything | macOS on Apple Silicon, and `make` (it comes with the Xcode command line tools) |
-| The page on recorded turns | [uv](https://docs.astral.sh/uv/) (it installs the right Python, 3.12, for you) and [Node.js](https://nodejs.org) 20.19+ or 22.12+ |
+| Anything | macOS on Apple Silicon, [Homebrew](https://brew.sh), and `make` (it comes with the Xcode command line tools) |
+| The page on recorded turns | `brew install portaudio` (PyAudio has no prebuilt macOS wheel and compiles against it), [uv](https://docs.astral.sh/uv/) (it installs the right Python, 3.12, for you), and [Node.js](https://nodejs.org) 20.19+ or 22.12+ |
 | To talk to the agent | [Ollama](https://ollama.com), running, plus the models `make setup` downloads (several GB; the language model alone is about 2 GB), a microphone, and headphones |
 | To record your own utterances | `ffmpeg` |
 
