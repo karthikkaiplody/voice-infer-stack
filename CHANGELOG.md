@@ -3,9 +3,9 @@
 All notable changes to this project are recorded here. It follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/). The event contract is versioned
-separately (see [SPANS.md](SPANS.md)); this release ships contract `1.1.0`.
+separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1.1.0`.
 
-## [Unreleased]
+## [1.0.1] - 2026-09-20
 
 ### Changed
 
@@ -76,4 +76,5 @@ auth, a hosted service, package publishing, a provider-switching UI,
 Grafana/Tempo/ClickHouse/Kafka/Kubernetes, raw content viewing, and support for
 other platforms.
 
+[1.0.1]: https://github.com/karthikkaiplody/voice-infer-stack/releases/tag/v1.0.1
 [1.0.0]: https://github.com/karthikkaiplody/voice-infer-stack/releases/tag/v1.0.0
