@@ -19,7 +19,6 @@ Two rules this module exists to enforce:
 # reading the committed traces should need no install at all.
 from __future__ import annotations
 
-import collections
 import json
 from pathlib import Path
 
@@ -32,28 +31,6 @@ def median(xs):
         return None
     mid = n // 2
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
-
-
-def load_traces(path):
-    """Group spans by trace, keyed by the conversation span's attributes.
-
-    additional_span_attributes are attached to the CONVERSATION span only, not
-    propagated to its children. Grouping on a child's attributes therefore
-    silently yields nothing, so the join has to go through trace_id.
-    """
-    spans = [json.loads(l) for l in Path(path).open() if l.strip()]
-    by_trace = collections.defaultdict(list)
-    for s in spans:
-        by_trace[s["trace_id"]].append(s)
-
-    runs = []
-    for tid, group in by_trace.items():
-        conv = next((g for g in group if g["name"] == "conversation"), None)
-        if not conv:
-            continue
-        runs.append({"trace_id": tid, "attrs": conv["attributes"], "spans": group})
-    runs.sort(key=lambda r: min(s["start_time_ns"] for s in r["spans"]))
-    return runs
 
 
 def intervals(run, name):
@@ -88,32 +65,6 @@ def union_ms(*sets):
 
 def duration_sum_ms(*sets):
     return sum(e - s for iv in sets for s, e in iv) / 1e6
-
-
-def overlap_report(run):
-    """The llm/tts concurrency claim, computed rather than asserted."""
-    llm, tts = intervals(run, "llm"), intervals(run, "tts")
-    if not llm or not tts:
-        return None
-    return {
-        "llm_tts_intersection_ms": round(intersection_ms(llm, tts), 1),
-        "duration_sum_ms": round(duration_sum_ms(llm, tts), 1),
-        "union_ms": round(union_ms(llm, tts), 1),
-        "llm_spans": len(llm),
-        "tts_spans": len(tts),
-    }
-
-
-def stage_table(run):
-    """Per-stage intervals relative to the conversation span start."""
-    t0 = min(s["start_time_ns"] for s in run["spans"])
-    return [{
-        "name": s["name"],
-        "start_ms": round((s["start_time_ns"] - t0) / 1e6, 1),
-        "end_ms": round((s["end_time_ns"] - t0) / 1e6, 1),
-        "duration_ms": round(s["duration_ms"], 1),
-        "ttfb": s["attributes"].get("metrics.ttfb"),
-    } for s in sorted(run["spans"], key=lambda s: s["start_time_ns"])]
 
 
 def speech_end_ms(wav_path) -> float | None:

@@ -5,6 +5,16 @@ All notable changes to this project are recorded here. It follows
 [Semantic Versioning](https://semver.org/). The event contract is versioned
 separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1.1.0`.
 
+## [Unreleased]
+
+### Removed
+
+- Six presentation-size slide images in `diagrams/slides/` (`*.dark.png` and
+  `*.light.png` without `clean`). Nothing used them, and
+  `node diagrams/render-slides.mjs` regenerates them.
+- Three helpers in `voice_agent/analysis/measurement.py` that nothing called:
+  `load_traces`, `overlap_report` and `stage_table`.
+
 ## [1.0.1] - 2026-09-20
 
 ### Changed
@@ -76,5 +86,5 @@ auth, a hosted service, package publishing, a provider-switching UI,
 Grafana/Tempo/ClickHouse/Kafka/Kubernetes, raw content viewing, and support for
 other platforms.
 
-[1.0.1]: https://github.com/karthikkaiplody/voice-infer-stack/releases/tag/v1.0.1
-[1.0.0]: https://github.com/karthikkaiplody/voice-infer-stack/releases/tag/v1.0.0
+[1.0.1]: https://github.com/karthikkaiplody/voice-infer-stack/tree/v1.0.1
+[1.0.0]: https://github.com/karthikkaiplody/voice-infer-stack/tree/v1.0.0
