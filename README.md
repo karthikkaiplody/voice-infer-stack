@@ -18,7 +18,7 @@ talk at the [IEEE RTC Conference 2026](https://rtc-conference.com/conference-sch
 
 ## Quick start
 
-macOS on Apple Silicon only. You need [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org) 20.19+ or 22.12+.
+macOS on Apple Silicon only. You need [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org) 20.19+ or 22.12+. If Node is missing or too old, `make` stops at once and says how to install one.
 
 ```bash
 git clone https://github.com/karthikkaiplody/voice-infer-stack.git

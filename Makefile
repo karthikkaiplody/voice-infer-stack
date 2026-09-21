@@ -41,13 +41,45 @@ LIVE_ENV = VOICE_AGENT=$${VOICE_AGENT-library} \
 	VOICE_USER_SPEECH_TIMEOUT=$${VOICE_USER_SPEECH_TIMEOUT:-0.2} \
 	VOICE_VAD_STOP_SECS=$${VOICE_VAD_STOP_SECS:-0.4}
 
-.PHONY: help setup setup-demo models budget fixtures record trace devices demo demo-live live viewer test test-all ui-test ui-build clean
+.PHONY: help check-node check-ui-deps setup setup-demo models budget fixtures record trace devices demo demo-live live viewer test test-all ui-test ui-build clean
+
+# The Node versions the browser page builds with: 20.19 or later 20.x, 22.12 or
+# later 22.x, or anything from 23. Keep these in step with "engines" in
+# ui/package.json; tests/test_node_check.py fails if they drift.
+NODE_20_MIN_MINOR = 19
+NODE_22_MIN_MINOR = 12
 
 help:
 	@# The header block only: it ends at the first blank line.
 	@awk '/^$$/ {exit} /^#   / {sub(/^#   /, ""); print}' Makefile
 
-setup-demo: ## install what the fixture replay needs: Python deps + UI deps (Node >= 20.19 or 22.12)
+# Fail in the first second, with the fix, instead of after a long install or as a
+# cryptic error from the page's build tools.
+check-node:
+	@node_path=$$(command -v node) || { \
+	  echo "Node.js is not installed. The browser page needs Node 20.19+ or 22.12+."; \
+	  echo "  brew install node"; \
+	  echo "Then open a new terminal and run this again."; exit 1; }; \
+	v=$$(node -p 'process.versions.node' 2>/dev/null); \
+	major=$${v%%.*}; rest=$${v#*.}; minor=$${rest%%.*}; \
+	if [ "$$major" -ge 23 ] 2>/dev/null \
+	  || { [ "$$major" = 22 ] && [ "$$minor" -ge $(NODE_22_MIN_MINOR) ]; } \
+	  || { [ "$$major" = 20 ] && [ "$$minor" -ge $(NODE_20_MIN_MINOR) ]; }; then exit 0; fi; \
+	echo "Node.js $${v:-(unknown version)} at $$node_path cannot build the browser page."; \
+	echo "It needs Node 20.19+ or 22.12+ (21 is not supported)."; \
+	echo ""; \
+	echo "Install a newer one, either way:"; \
+	echo "  brew install node                 # the latest release"; \
+	echo "  cd ui && nvm install && cd ..     # Node 22, from ui/.nvmrc"; \
+	echo ""; \
+	echo "Then open a new terminal, so the newer one is the one on your PATH, and run this again."; \
+	exit 1
+
+check-ui-deps:
+	@[ -d ui/node_modules ] || { \
+	  echo "The page's dependencies are not installed yet. Run:  make setup-demo"; exit 1; }
+
+setup-demo: check-node ## install what the fixture replay needs: Python deps + UI deps (Node >= 20.19 or 22.12)
 	@# PyAudio has no prebuilt macOS wheel: it compiles against Homebrew's portaudio.
 	@# Without it `uv sync` fails deep inside a C compiler; say what to do instead.
 	@[ -e "$$(brew --prefix portaudio 2>/dev/null)/include/portaudio.h" ] || \
@@ -83,17 +115,16 @@ devices: ## list microphones, so you can pick the right one
 	@uv run python -c "from voice_agent.pipeline import factory; [print(('  * ' if d['default'] else '    ')+f\"[{d['index']}] {d['name']}\") for d in factory.list_input_devices()]"
 	@echo "  * = system default.  Choose another: VOICE_AUDIO_DEVICE=5 make live"
 
-demo-live: ui-build ## talk to the agent and watch contract-v1 events, live
-	$(MAKE) live
+demo-live: live ## talk to the agent and watch contract-v1 events, live
 
-live: ## open the page on the live agent; the page can switch to the fixtures
+live: ui-build ## open the page on the live agent; the page can switch to the fixtures
 	$(LIVE_ENV) uv run python -m voice_agent.server.live --mode live --port $(PORT)
 
-ui-test: ## type-check and test the browser UI
+ui-test: check-node check-ui-deps ## type-check and test the browser UI
 	npm --prefix ui run typecheck
 	npm --prefix ui test
 
-ui-build: ## build the browser UI into ui/dist
+ui-build: check-node check-ui-deps ## build the browser UI into ui/dist
 	npm --prefix ui run build
 
 viewer: ## render one turn as a standalone HTML page
