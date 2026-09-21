@@ -115,7 +115,7 @@ Other platforms are outside the scope of this release.
 
 ## About this release
 
-Version 1.0.0 is a local teaching companion: a page, a pipeline and a contract you
+This release is a local teaching companion: a page, a pipeline and a contract you
 can run and read on one Mac. The live agent registers no tools and mutes the
 microphone while it speaks, so tool calls and interrupted turns appear only in the
 recorded scenarios. It does not include cloud deployment, saved trace history,
