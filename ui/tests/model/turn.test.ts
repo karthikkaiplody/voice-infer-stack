@@ -9,10 +9,10 @@ const progression = (name: FixtureName) =>
 
 describe("primary metric: speech ended → output transport accepted first audio", () => {
   it.each([
-    ["normal-completed", 320],
+    ["normal-completed", 1250],
     ["slow-blocking-tool", 3270],
-    ["interrupted", 270],
-    ["false-endpoint", 770],
+    ["interrupted", 1250],
+    ["false-endpoint", 1050],
   ] as const)("%s measures %d ms from the recorded timestamps", (name, ms) => {
     expect(primaryMetric(turnOf(fixtureEvents(name)))).toEqual({ status: "measured", ms });
   });
@@ -126,7 +126,7 @@ describe("event log", () => {
   it("orders by time and offsets from the first event, without inventing zeros", () => {
     const log = eventLog(turnOf(fixtureEvents("normal-completed")));
     expect(log[0]).toMatchObject({ name: "user_speech.started", offsetMs: null });
-    expect(log.find((r) => r.name === "output_transport.first_audio")?.offsetMs).toBe(1120);
+    expect(log.find((r) => r.name === "output_transport.first_audio")?.offsetMs).toBe(2050);
     expect(log.map((r) => r.name)).toContain("turn.completed");
   });
 

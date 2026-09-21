@@ -22,13 +22,13 @@ describe("measured stages come from recorded timestamps", () => {
   it("normal turn: every stage but tools is measured, relative to speech ending", () => {
     const wf = build("normal-completed");
     expect(row(wf, "user_speech")).toMatchObject({ status: "measured", startMs: -800, endMs: 0, durationMs: 800 });
-    expect(row(wf, "endpointing")).toMatchObject({ status: "measured", startMs: 0, endMs: 130, durationMs: 130 });
-    expect(row(wf, "stt")).toMatchObject({ status: "measured", startMs: 10, endMs: 120, durationMs: 110, markerMs: 70 });
-    expect(row(wf, "llm")).toMatchObject({ status: "measured", startMs: 140, endMs: 210, durationMs: 70 });
-    expect(row(wf, "tts")).toMatchObject({ status: "measured", startMs: 220, endMs: 300, durationMs: 80 });
-    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", startMs: 300, endMs: 320, durationMs: 20, markerMs: 320 });
+    expect(row(wf, "endpointing")).toMatchObject({ status: "measured", startMs: 0, endMs: 600, durationMs: 600 });
+    expect(row(wf, "stt")).toMatchObject({ status: "measured", startMs: 10, endMs: 560, durationMs: 550, markerMs: 540 });
+    expect(row(wf, "llm")).toMatchObject({ status: "measured", startMs: 610, endMs: 860, durationMs: 250 });
+    expect(row(wf, "tts")).toMatchObject({ status: "measured", startMs: 870, endMs: 1230, durationMs: 360 });
+    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", startMs: 1230, endMs: 1250, durationMs: 20, markerMs: 1250 });
     expect(row(wf, "tools").status).toBe("not_in_scenario");
-    expect(wf.slowest).toEqual({ label: "Endpointing", latencyMs: 130 });
+    expect(wf.slowest).toEqual({ label: "Endpointing", latencyMs: 600 });
   });
 
   it("slow blocking tool: the tool is the slowest stage and holds first audio back", () => {
@@ -42,14 +42,14 @@ describe("measured stages come from recorded timestamps", () => {
 
   it("interrupted turn: audio was accepted before the interruption", () => {
     const wf = build("interrupted");
-    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", endMs: 270 });
-    expect(wf.slowest).toEqual({ label: "Language model", latencyMs: 80 });
+    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", endMs: 1250 });
+    expect(wf.slowest).toEqual({ label: "Text to speech", latencyMs: 360 });
   });
 
   it("answered too early: a short wait and fast first audio, then the turn is interrupted", () => {
     const wf = build("false-endpoint");
     expect(row(wf, "endpointing")).toMatchObject({ status: "measured", startMs: 0, endMs: 400, durationMs: 400 });
-    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", endMs: 770 });
+    expect(row(wf, "output_transport")).toMatchObject({ status: "measured", endMs: 1050 });
     expect(row(wf, "tools").status).toBe("not_in_scenario");
   });
 
@@ -137,7 +137,7 @@ describe("speech-to-text overlaps speaking", () => {
     const events = fixtureEvents("normal-completed").map((e) =>
       e.event_name === "stt.started" ? { ...e, timestamp_ns: 1_000_000_000 } : e);   // 800 ms before speech ended
     const stt = row(buildWaterfall(turnOf(events), fixtureCtx), "stt");
-    expect(stt).toMatchObject({ startMs: -800, endMs: 120, durationMs: 920, latencyMs: 120 });
+    expect(stt).toMatchObject({ startMs: -800, endMs: 560, durationMs: 1360, latencyMs: 560 });
     expect(stt.notes).toContain("counts only the time after you stopped talking");
   });
 
@@ -166,12 +166,12 @@ describe("axis", () => {
   it("is zero at speech ending and ignores the trailing terminal event", () => {
     const { axis } = build("normal-completed");
     expect(axis.originLabel).toBe("user speech ended");
-    // Data spans −800 … +320 ms; the axis adds 4% of that span on each side, and
-    // the trailing turn.completed (at +800 ms) does not stretch it.
-    expect(axis.minMs).toBeCloseTo(-800 - 0.04 * 1120, 6);
-    expect(axis.maxMs).toBeCloseTo(320 + 0.04 * 1120, 6);
+    // Data spans −800 … +1250 ms; the axis adds 4% of that span on each side, and
+    // the trailing turn.completed (at +3800 ms) does not stretch it.
+    expect(axis.minMs).toBeCloseTo(-800 - 0.04 * 2050, 6);
+    expect(axis.maxMs).toBeCloseTo(1250 + 0.04 * 2050, 6);
     expect(axis.ticks).toContain(0);
-    expect(axis.ticks.every((t) => t >= -800 && t <= 320)).toBe(true);
+    expect(axis.ticks.every((t) => t >= -800 && t <= 1250)).toBe(true);
   });
 
   it("places every bar inside the lane", () => {
