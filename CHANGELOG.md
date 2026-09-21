@@ -31,6 +31,12 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ### Changed
 
+- The recorded turns now run at realistic speeds. A normal turn showed 320 ms from
+  speech end to first audio, with every stage 70 to 130 ms, which contradicted what
+  this repo measures (about 1.3 to 1.8 s on a local stack). The normal, grounded,
+  interrupted and answered-too-early turns now use the fixture's own settings (a
+  600 ms endpointing wait) and stage times taken from this repo's runs, so a normal
+  turn is 1,250 ms and the README screenshot shows it. The page opens on that turn.
 - The silent-microphone warning on the page is now a short list of steps that starts
   with the Mac's own input setting (System Settings → Sound → Input) and keeps
   `make devices` and `VOICE_AUDIO_DEVICE` as the fallback, instead of sending

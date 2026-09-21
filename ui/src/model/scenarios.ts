@@ -16,7 +16,7 @@ const NAMES: Record<string, { title: string; blurb: string }> = {
   },
   "false-endpoint": {
     title: "Answered too early",
-    blurb: "A one-second pause is read as the end of your turn. The agent answers fast, then you carry on and it is cut off.",
+    blurb: "A pause of a second or more is read as the end of your turn. The agent answers sooner than usual, then you carry on and it is cut off.",
   },
   "failed-tool": {
     title: "Failed tool",

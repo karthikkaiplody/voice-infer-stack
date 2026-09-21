@@ -38,7 +38,7 @@ describe("the page", () => {
   it("a completed replay: state, the primary metric, and what it does not mean", () => {
     const page = text(html(replayState("normal-completed")));
     expect(page).toContain("Completed");
-    expect(page).toContain("320 ms");
+    expect(page).toContain("1,250 ms");
     expect(page).toContain("User speech ended → output transport accepted first audio");
     expect(page).toContain("not confirmed audible playback");
     expect(page).not.toMatch(/\baudible playback confirmed|heard\b/i);
@@ -51,7 +51,7 @@ describe("the page", () => {
   it("an interrupted replay renders Interrupted", () => {
     const page = text(html(replayState("interrupted")));
     expect(page).toContain("Interrupted");
-    expect(page).toContain("270 ms");
+    expect(page).toContain("1,250 ms");
   });
 
   it("a failed replay is Unavailable with a reason, never 0 ms", () => {
@@ -83,7 +83,7 @@ describe("the page", () => {
   it("lists the events received in time order", () => {
     const page = text(html(replayState("normal-completed")));
     expect(page.indexOf("user_speech.started")).toBeLessThan(page.indexOf("output_transport.first_audio"));
-    expect(page).toContain("+1,120 ms");
+    expect(page).toContain("+2,050 ms");
   });
 
   it("shows a fixed notice, not server text, when the pipeline errors", () => {
@@ -202,7 +202,7 @@ describe("the waterfall on the page", () => {
     expect(page).toContain("speech lasted 800 ms");
     expect(page).toContain("policy: vad_timeout");
     expect(page).toContain("configured VAD silence: 400 ms");
-    expect(page).toContain("Slowest measured stage: Endpointing · 130 ms");
+    expect(page).toContain("Slowest measured stage: Endpointing · 600 ms");
     expect(page).toContain("ms from user speech ended");
   });
 
@@ -261,10 +261,10 @@ describe("the waterfall on the page", () => {
 
 describe("live-scale timestamps (epoch nanoseconds)", () => {
   it.each([
-    ["normal-completed", "320 ms", "Completed"],
+    ["normal-completed", "1,250 ms", "Completed"],
     ["slow-blocking-tool", "3,270 ms", "Completed"],
-    ["interrupted", "270 ms", "Interrupted"],
-    ["false-endpoint", "770 ms", "Interrupted"],
+    ["interrupted", "1,250 ms", "Interrupted"],
+    ["false-endpoint", "1,050 ms", "Interrupted"],
   ] as const)("%s renders the same numbers as the small-timestamp fixture", (name, metric, outcome) => {
     const state = fold([fixtureHello(), { kind: "replay_reset", scenario: name },
                         ...epochFixtureEvents(name).map(telemetry)]);

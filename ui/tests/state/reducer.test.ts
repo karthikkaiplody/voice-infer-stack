@@ -13,7 +13,7 @@ describe("replay", () => {
   it("ends a normal replay Completed with the measured metric", () => {
     const state = replayState("normal-completed");
     expect(deriveState(state.turn)).toBe("Completed");
-    expect(primaryMetric(state.turn)).toEqual({ status: "measured", ms: 320 });
+    expect(primaryMetric(state.turn)).toEqual({ status: "measured", ms: 1250 });
     expect(outcomeView(state)).toEqual({ kind: "observed", outcome: "completed", classification: null });
   });
 
@@ -62,7 +62,7 @@ describe("a new turn clears stale state", () => {
 
   it("does not let the first turn's numbers leak into the second", () => {
     const state = fold([...a.map(telemetry), ...b.map(telemetry)], fold([hello()]));
-    expect(primaryMetric(state.turn)).toEqual({ status: "measured", ms: 270 });
+    expect(primaryMetric(state.turn)).toEqual({ status: "measured", ms: 1250 });
     expect(outcomeOf(state.turn)).toBe("interrupted");
   });
 });
