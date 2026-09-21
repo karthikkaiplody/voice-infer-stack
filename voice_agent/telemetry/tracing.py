@@ -215,7 +215,10 @@ class TurnSpanObserver(BaseObserver):
         self._seen_errors: deque = deque(maxlen=32)
         self._speech_end: float | None = None   # wall clock seconds
         self._stop_secs: float = 0.0
-        self._window_open = False
+        # Where the budget window opened (wall clock seconds): set when the
+        # turn detector accepts that you stopped, cleared when the window is
+        # written or when you start speaking again. None means no window is open.
+        self._window_start: float | None = None
         self._first_synthesized_sample_seen = False
         self._first_output_audio_seen = False
         self._first_synthesized_sample_ns: int | None = None
@@ -270,6 +273,7 @@ class TurnSpanObserver(BaseObserver):
             self._start_logical_turn()
         elif isinstance(f, VADUserStartedSpeakingFrame):
             self._speech_end = None
+            self._window_start = None
             # Where the user's speech began: the VAD's decision time, minus the
             # speech it had to hear first. The logical-turn frame arrives later.
             self._vad_speech_start_ns = int((f.timestamp - f.start_secs) * 1e9)
@@ -314,7 +318,12 @@ class TurnSpanObserver(BaseObserver):
         self._logical_turn_state = "active"
         self._speech_end = None
         self._stop_secs = 0.0
-        self._window_open = False
+        # The budget window is deliberately left alone. When the turn closes
+        # before the last transcript arrives, that transcript starts a new
+        # logical turn without any VAD frame; the wait you sat through is still
+        # the one to measure, and the answer that follows is the one it ends
+        # at. A real new turn always passes a VADUserStartedSpeakingFrame, which
+        # is what discards the window.
         self._first_synthesized_sample_seen = False
         self._first_output_audio_seen = False
         self._first_synthesized_sample_ns = None
@@ -361,8 +370,10 @@ class TurnSpanObserver(BaseObserver):
         # silently treated as a like-for-like measurement of a different one.
         span.set_attribute("measured_as", "vad_frame_timestamp")
         span.end(end_time=end)
-        self._window_open = True
-        speech_end_ns = int(self._speech_end * 1e9)
+        self._window_start = self._speech_end
+        # Consumed: a second stop frame for the same speech must not measure it twice.
+        self._speech_end = None
+        speech_end_ns = int(self._window_start * 1e9)
         self._emit_event("user_speech.ended", speech_end_ns)
         self._emit_event("endpointing.started", speech_end_ns,
                          attributes={"strategy": self._endpoint_strategy},
@@ -378,12 +389,12 @@ class TurnSpanObserver(BaseObserver):
         holding a window that silently never appears -- and the page waiting on
         a bar that never arrives.
         """
-        if not self._window_open or self._speech_end is None:
+        if self._window_start is None:
             return
-        self._window_open = False
+        start, self._window_start = self._window_start, None
         tracer = trace.get_tracer(TRACER)
         span = tracer.start_span("e2e.speech_end_to_first_audio",
-                                 start_time=int(self._speech_end * 1e9))
+                                 start_time=int(start * 1e9))
         span.set_attribute("mode", self._mode)
         if self._fixture:
             span.set_attribute("fixture", self._fixture)
@@ -393,7 +404,7 @@ class TurnSpanObserver(BaseObserver):
         except Exception:
             pass
         span.set_attribute("duration_ms",
-                           round(end / 1e6 - self._speech_end * 1000, 1))
+                           round(end / 1e6 - start * 1000, 1))
         span.set_attribute("measured_as", "output_transport_accepted")
         span.end(end_time=end)
         self._logical_turn_state = "completed"
