@@ -343,8 +343,15 @@ describe("a silent microphone", () => {
   it("is explained, with the way out, while the agent is listening", () => {
     const page = text(html(fold([{ kind: "input_silent" }], listening())));
     expect(page).toContain(warning);
-    expect(page).toContain("make devices");
+    expect(page).toContain("System Settings → Sound → Input");        // the first thing to try
+    expect(page).toContain("Stop listening");
+    expect(page).toContain("make devices");                            // the fallback
     expect(page).toContain("VOICE_AUDIO_DEVICE=&lt;number&gt; make live");   // escaped, as all text is
+  });
+
+  it("does not name the microphone: the page never learns its name", () => {
+    const page = text(html(fold([{ kind: "input_silent" }], listening())));
+    expect(page).not.toMatch(/MacBook|AirPods|USB|Built-in/i);
   });
 
   it("goes away when sound returns, and when listening stops", () => {

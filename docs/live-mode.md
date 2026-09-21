@@ -47,10 +47,16 @@ time you press Start listening, and the page shows what each one launched as.
 
 The microphone is the first suspect, not the pipeline. The greeting is the agent
 talking; it says nothing about whether anything is being heard. When the input is
-*exactly* silent for a couple of seconds, the page says so. The usual cause is a
-system default input that is a virtual device (a mixer or loopback) with nothing
-routed to it. `make devices` lists the inputs; pick the real microphone by its
-number:
+*exactly* silent for a couple of seconds, the page says so, with the steps below.
+The usual cause is a system default input that is a virtual device (a mixer or
+loopback) with nothing routed to it. The page does not name the microphone,
+because device names are never sent to it.
+
+1. Open **System Settings → Sound → Input** and select your real microphone.
+   Speak, and its input level bar should move.
+2. Press **Stop listening**, then stop `make live` (Ctrl+C) and run it again, so
+   the agent opens the microphone you just selected. The page reconnects by itself.
+3. Still silent? `make devices` lists every input with a number. Pick one:
 
 ```bash
 make devices                       # find the microphone's number
