@@ -100,7 +100,8 @@ cleanup. It must never be enabled by default.
 
 The files in `fixtures/telemetry/` are synthetic metadata-only examples: a
 completed turn, a slow blocking-tool turn, an interrupted turn, a failed tool
-turn with a retry (all `1.0.0`), and a grounded answer with a retrieval stage
+turn with a retry, and a turn answered too early, where a pause is read as the end
+of the turn and the user then carries on (all `1.0.0`), and a grounded answer with a retrieval stage
 (`1.1.0`). Fixtures must pass `validate_trace` and must never be
 copied from customer or developer sessions.
 

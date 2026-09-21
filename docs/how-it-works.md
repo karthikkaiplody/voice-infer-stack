@@ -52,8 +52,8 @@ the output transport took the first audio frame. It is not a claim that you hear
 it, and `tts.first_synthesized_sample` is a separate, earlier boundary.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/slides/cascade-pipeline.clean.dark.png">
-  <img src="../diagrams/slides/cascade-pipeline.clean.light.png" alt="The default stack, stage by stage: microphone frames through Silero VAD and endpointing, Whisper, an Ollama language model, and Kokoro speech synthesis.">
+  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/images/cascade-pipeline.dark.png">
+  <img src="../diagrams/images/cascade-pipeline.light.png" alt="The default stack, stage by stage: microphone frames through Silero VAD and endpointing, Whisper, an Ollama language model, and Kokoro speech synthesis.">
 </picture>
 
 *The default stack. Every box is swappable from the environment: see

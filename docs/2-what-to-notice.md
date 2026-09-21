@@ -10,21 +10,23 @@ they are the argument of the talk.
 
 `stop_secs` is how long the agent waits in silence before deciding you have
 finished speaking. It burns no FLOPs, it is a config constant, and most people
-never open it. On the live page it is the first bar, and it usually starts
-before anything else is allowed to run.
+never open it. On the page it is the *Endpointing* row, and it is usually the
+longest bar in the turn.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/slides/turn-timeline.clean.dark.png">
-  <img src="../diagrams/slides/turn-timeline.clean.light.png" alt="One turn as a timeline: 1102 ms of turn-detection wait, speech-to-text overlapping it, then 218 ms of generation and 350 ms of synthesis. First audio at 1671 ms.">
+  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/images/turn-timeline.dark.png">
+  <img src="../diagrams/images/turn-timeline.light.png" alt="One turn as a timeline: 1102 ms of turn-detection wait, speech-to-text overlapping it, then 218 ms of generation and 350 ms of synthesis. First audio at 1671 ms.">
 </picture>
 
 ## 2. You cannot just turn it down
 
-Below the length of a speaker's natural pause, the detector fires mid-sentence,
-the agent answers a fragment, and the work is thrown away. Turning the timeout
-down can make the turn *slower*, because a discarded generation costs more than
-the wait it saved. The live page shows this directly: a stage that ran twice in
-one turn is marked, because the first one was wasted. A captured example, with
+Turn the wait down far enough and the agent decides you are finished before it
+has everything you said. It answers what it has, the rest arrives, and that
+answer is thrown away and generated again. The wait you saved is spent twice
+over: in our run the endpointing wait fell to about 200 ms and the turn still took
+as long as before. `make trace` marks it (`llm 2x - work was discarded`), and the
+page replays it as *Answered too early*: fast first audio, then an interrupted
+turn. A captured example, with
 every run laid out span by span, is in
 [`artifacts/turn-detection/`](../artifacts/turn-detection/). It was recorded
 before the span contract in [`SPANS.md`](../SPANS.md) existed, so `analysis/viewer.py`
@@ -32,8 +34,8 @@ cannot draw it; to see a false endpoint as a waterfall, cut the silence dial
 yourself — [swap 2 in Part 1](1-swap-and-see.md#three-swaps-to-try-in-order).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/slides/false-endpoint.clean.dark.png">
-  <img src="../diagrams/slides/false-endpoint.clean.light.png" alt="Sequence diagram of the captured false endpoint: a 260 ms clause pause read as end of turn, a generation answering the fragment, discarded.">
+  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/images/false-endpoint.dark.png">
+  <img src="../diagrams/images/false-endpoint.light.png" alt="Sequence diagram of the captured false endpoint: a 260 ms clause pause read as end of turn, a generation answering the fragment, discarded.">
 </picture>
 
 ## 3. Two default timeouts can cost more than any model
@@ -50,9 +52,11 @@ The safety net is short-circuited the moment speech-to-text flags a transcript
 as final, so the full second is the worst case, not the design. But Whisper
 tiny returns in about 60 ms locally, and the worst case is what an unflagged
 transcript gets you: the pipeline waiting up to a second for something that
-had already arrived. `make live` sets both honestly for a local stack; set
-them back and watch the first row grow. (Pipecat will log that the STT wait
-"collapsed to 0s". That is the point, not a bug.)
+had already arrived. `make live` sets both for a local stack. In our runs the one that moved the
+number was the speech timeout: 0.6 s to 0.2 s took about 400 ms off the wait,
+while raising the safety net to 1.0 s changed nothing, because the transcript was
+flagged final first. (Pipecat will log that the STT wait "collapsed to 0s". That
+is expected here, not a bug.) Swap 1 in [Part 1](1-swap-and-see.md) runs this.
 
 ## Also on the page: the lookup is not the problem
 
