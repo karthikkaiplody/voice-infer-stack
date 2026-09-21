@@ -15,7 +15,9 @@ from voice_agent.config import Config
 from pipecat.frames.frames import (
     TTSAudioRawFrame,
     UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
     VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.transports.base_output import BaseOutputTransport
@@ -409,8 +411,7 @@ def test_observer_separates_synthesis_from_transport_acceptance(monkeypatch):
     ticks = iter([2_000_000_000, 2_100_000_000, 2_200_000_000])
     monkeypatch.setattr(tracing.time, "time_ns", lambda: next(ticks))
     observer = TurnSpanObserver(mode="file", fixture="synthetic")
-    observer._speech_end = 1.0
-    observer._window_open = True
+    observer._window_start = 1.0
     frame = TTSAudioRawFrame(audio=b"\0\0", sample_rate=24000, num_channels=1)
     output = object.__new__(BaseOutputTransport)
     tts_push = SimpleNamespace(
@@ -429,8 +430,7 @@ def test_observer_separates_synthesis_from_transport_acceptance(monkeypatch):
         direction=FrameDirection.DOWNSTREAM)
     asyncio.run(observer.on_push_frame(resumed))
     asyncio.run(observer.on_push_frame(tts_push))
-    observer._speech_end = 1.0
-    observer._window_open = True
+    observer._window_start = 1.0
     asyncio.run(observer.on_push_frame(accepted_push))
     asyncio.run(observer.on_push_frame(accepted_push))
 
@@ -461,17 +461,17 @@ def test_new_logical_turn_resets_unwritten_first_boundary_state(monkeypatch):
             direction=FrameDirection.DOWNSTREAM)
 
     asyncio.run(observer.on_push_frame(pushed(UserStartedSpeakingFrame())))
-    observer._speech_end = 1.0
-    observer._window_open = True
+    observer._window_start = 1.0
     asyncio.run(observer.on_push_frame(pushed(frame, destination=output)))
     first_synth = observer._first_synthesized_sample_ns
 
+    # A real new turn is always preceded by the VAD hearing you start again.
+    asyncio.run(observer.on_push_frame(pushed(VADUserStartedSpeakingFrame())))
     asyncio.run(observer.on_push_frame(pushed(UserStartedSpeakingFrame())))
     assert observer._previous_logical_turn_outcome == "interrupted_or_unwritten"
     assert observer._first_synthesized_sample_ns is None
-    assert observer._window_open is False
-    observer._speech_end = 2.5
-    observer._window_open = True
+    assert observer._window_start is None
+    observer._window_start = 2.5
     asyncio.run(observer.on_push_frame(pushed(frame, destination=output)))
     second_synth = observer._first_synthesized_sample_ns
     asyncio.run(observer.on_push_frame(pushed(frame, source=output)))
@@ -489,6 +489,47 @@ def test_new_logical_turn_resets_unwritten_first_boundary_state(monkeypatch):
     assert output_span.start_time >= second_synth
     assert window.end_time == output_span.start_time
     assert observer._logical_turn_state == "completed"
+
+
+def test_late_transcript_restart_keeps_the_budget_window(monkeypatch):
+    """A false endpoint: the turn closes before the last transcript arrives.
+
+    That transcript starts a new logical turn with no VAD frame before it. The
+    wait the user sat through is still the one to measure, so the window must
+    survive the restart and end at the first audio, and the turn-detection wait
+    must be written once, not again for the restarted turn.
+    """
+    tracer = _FakeTracer()
+    monkeypatch.setattr(tracing.trace, "get_tracer", lambda _: tracer)
+    now = iter(range(5_000_000_000, 6_000_000_000, 100_000_000))
+    monkeypatch.setattr(tracing.time, "time_ns", lambda: next(now))
+    observer = TurnSpanObserver(mode="file", fixture="synthetic")
+    output = object.__new__(BaseOutputTransport)
+    audio = TTSAudioRawFrame(audio=b"\0\0", sample_rate=24000, num_channels=1)
+
+    def pushed(frame, source=object(), destination=object()):
+        return SimpleNamespace(
+            frame=frame, source=source, destination=destination,
+            direction=FrameDirection.DOWNSTREAM)
+
+    def push(*args, **kwargs):
+        asyncio.run(observer.on_push_frame(pushed(*args, **kwargs)))
+
+    push(VADUserStartedSpeakingFrame(start_secs=0.2, timestamp=1.0))
+    push(UserStartedSpeakingFrame())
+    push(VADUserStoppedSpeakingFrame(stop_secs=0.2, timestamp=4.2))   # speech ended at 4.0
+    push(UserStoppedSpeakingFrame())
+    push(UserStartedSpeakingFrame())        # the late transcript: no VAD frame first
+    push(UserStoppedSpeakingFrame())
+    push(audio, destination=output)
+    push(audio, source=output)
+
+    names = [span.name for span in tracer.spans]
+    assert names.count("turn_detection") == 1
+    assert names.count("e2e.speech_end_to_first_audio") == 1
+    window = next(s for s in tracer.spans if s.name == "e2e.speech_end_to_first_audio")
+    assert window.start_time == 4_000_000_000
+    assert window.end_time > window.start_time
 
 
 class _ReadableSpan:
