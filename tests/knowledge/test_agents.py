@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from voice_agent import paths
 from voice_agent.knowledge import agents
 from voice_agent.knowledge.agents import AgentError, load_agent
 from voice_agent.config import CONFIG, Config
@@ -20,7 +21,9 @@ from voice_agent.telemetry.contract import CONTROLLED_CODE_PATTERN
 def test_the_library_agent_loads_with_its_knowledge_and_greeting():
     agent = load_agent("library")
     assert agent.title == "Riverside Public Library information line"
-    assert agent.has_knowledge and len(agent.passages) == 6
+    assert agent.has_knowledge
+    assert {p.source for p in agent.passages} == {"library", "catalog", "summaries"}
+    assert sum(p.source == "library" for p in agent.passages) == 6      # hours, loans, fines, cards, rooms
     assert agent.greeting.startswith("Hello, this is the Riverside Public Library")
     assert "answer using only those notes" in agent.prompt.lower()
 
@@ -52,6 +55,51 @@ def test_the_facts_are_in_the_knowledge_and_not_in_the_prompt():
 def test_library_questions_find_the_right_passage_first(question, section):
     hits = load_agent("library").index.search(question, 3)
     assert hits and hits[0].passage.id == f"library.{section}"
+
+
+# ------------------------------------------------------- suggestions and books --
+
+def test_every_summarized_book_is_on_a_catalog_shelf():
+    """A summary for a book the catalog never offers could never be suggested."""
+    catalog = (paths.AGENTS_DIR / "library" / "knowledge" / "catalog.md").read_text()
+    titles = [p.heading for p in load_agent("library").passages if p.source == "summaries"]
+    assert len(titles) >= 15
+    for title in titles:
+        assert re.search(rf"{re.escape(title)} by [A-Z]", catalog), f"{title} is not on a catalog shelf"
+
+
+@pytest.mark.parametrize("question, passage", [
+    ("can you suggest a book", "catalog.book-suggestions-and-recommendations"),
+    ("what should I read next", "catalog.book-suggestions-and-recommendations"),
+    ("can you recommend a good mystery novel", "catalog.mystery-books"),
+    ("I like space stories", "catalog.science-fiction-books"),
+    ("something like Harry Potter", "catalog.fantasy-books"),
+    ("any good books for my eight year old", "catalog.children-s-and-young-adult-books"),
+    ("a romantic comedy for the weekend", "catalog.romance-and-classics-books"),
+    ("recommend a memoir", "catalog.non-fiction-books"),
+    ("where can I find the non-fiction books", "catalog.where-to-find-books"),
+    ("what is The Martian about", "summaries.the-martian"),
+    ("tell me about Atomic Habits", "summaries.atomic-habits"),
+    ("what is Pride and Prejudice about", "summaries.pride-and-prejudice"),
+    ("do you have Dune in stock", "summaries.dune"),
+])
+def test_suggestion_and_book_questions_find_their_notes(question, passage):
+    ids = [h.passage.id for h in load_agent("library").index.search(question, 3)]
+    assert passage in ids, ids
+
+
+def test_asking_for_a_genre_puts_that_genre_first():
+    index = load_agent("library").index
+    for question, first in [("recommend a good mystery", "catalog.mystery-books"),
+                            ("suggest science fiction", "catalog.science-fiction-books"),
+                            ("suggest a fantasy book", "catalog.fantasy-books")]:
+        assert index.search(question, 3)[0].passage.id == first
+
+
+def test_the_prompt_lets_it_suggest_but_only_from_the_notes():
+    prompt = load_agent("library").prompt.lower()
+    assert "suggest" in prompt and "recommendation" in prompt
+    assert "not in the notes" in prompt and "front desk" in prompt
 
 
 @pytest.mark.parametrize("question", ["tell me a joke about pirates", "do you have any events", "", "the a of"])

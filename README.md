@@ -43,7 +43,7 @@ make setup          # dependencies and model weights, once (several GB)
 make live           # then open http://127.0.0.1:8080 and press Start listening
 ```
 
-Wait for it to greet you, then ask *"what time do you close on Sunday?"*. If it
+Wait for it to greet you, then ask *"what time do you close on Sunday?"* or *"can you suggest a mystery?"*. If it
 greets you and never answers, see [Live mode](docs/live-mode.md).
 
 </details>

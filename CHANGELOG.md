@@ -9,6 +9,11 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ### Added
 
+- The library agent can suggest books. A catalog of nineteen real books in seven
+  genres, with where to find them and what the information line cannot check, and a
+  short summary of each book, all in `agents/library/knowledge/`. Its prompt now
+  allows suggestions, but only from the notes, and sends a title it does not know
+  to the front desk. Asked for a suggestion with no genre, it offers the staff picks.
 - A Node check up front. `make setup-demo`, `make ui-build`, `make ui-test` and the
   targets that build the page stop in the first second when Node is missing or
   older than 20.19 / 22.12, name the version and path they found, and say how to
