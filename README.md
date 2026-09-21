@@ -281,6 +281,20 @@ The full folder tour and a one-line description of every file are in the
 make test-all       # the Python tests, then the page's type-check, tests and build
 ```
 
+## What this release is, and is not
+
+Version 1.0.0 is a local teaching companion: a page, a pipeline and a contract you
+can run and read on one Mac. Two things about live mode are worth knowing up
+front. The live agent registers no tools, so Tool calls reads *Not instrumented*,
+and it mutes the microphone while it speaks, so an interrupted turn appears only
+in the recorded scenarios.
+
+It does not include cloud deployment, a database or saved trace history, comparing
+configurations, auth, a hosted service, package publishing, a provider-switching
+UI, a Grafana/Tempo/ClickHouse/Kafka/Kubernetes stack, raw content viewing, or
+support for other platforms. See the [changelog](CHANGELOG.md) for the full list of
+known limitations.
+
 ## Contributing and security
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; the one
