@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Screenshots the three diagram HTML pages with headless Chrome, light and
-// dark. Needs only Node and a Chrome/Chromium install; set CHROME_PATH if
+// dark, into images/ (the PNGs the docs embed). Needs only Node and a Chrome/Chromium install; set CHROME_PATH if
 // yours lives somewhere unusual.
 function findChrome() {
   if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
@@ -23,7 +23,7 @@ if (!chrome) { console.error('no chrome found; set CHROME_PATH'); process.exit(1
 
 const dir = path.dirname(new URL(import.meta.url).pathname);
 const names = ['cascade-pipeline', 'turn-timeline', 'false-endpoint'];
-const W = 1600, H = 1000, SCALE = 2;
+const W = 1600, H = 760, SCALE = 2;
 
 const userDataDir = fs.mkdtempSync('/tmp/diagram-shot-');
 const child = spawn(chrome, [
@@ -60,18 +60,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(800);
 
 for (const name of names) {
-  for (const [mode, suffix, h, beyond] of [['present', '', 1000, false], ['embed', 'clean.', 760, true]])
   for (const theme of ['dark', 'light']) {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
     await send('Page.enable', {}, sessionId);
     await send('Emulation.setDeviceMetricsOverride',
-      { width: W, height: h, deviceScaleFactor: SCALE, mobile: false }, sessionId);
-    const url = `file://${dir}/${name}.html?${mode}=1&theme=${theme}`;
+      { width: W, height: H, deviceScaleFactor: SCALE, mobile: false }, sessionId);
+    const url = `file://${dir}/${name}.html?embed=1&theme=${theme}`;
     await send('Page.navigate', { url }, sessionId);
     await sleep(3500);
-    const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: beyond }, sessionId);
-    const out = path.join(dir, 'slides', `${name}.${suffix}${theme}.png`);
+    const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId);
+    const out = path.join(dir, 'images', `${name}.${theme}.png`);
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, Buffer.from(data, 'base64'));
     console.log('wrote', out);

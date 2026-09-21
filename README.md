@@ -27,7 +27,9 @@ brew install portaudio
 make setup-demo && make demo      # then open http://127.0.0.1:8080
 ```
 
-That replays recorded, synthetic turns: no microphone, no models, no API key.
+The page opens on a recorded, synthetic turn and replays it by itself; the
+Scenario menu picks another, including one where the agent answers too early.
+No microphone, no models, no API key.
 
 <details>
 <summary><b>Talk to the agent live</b></summary>

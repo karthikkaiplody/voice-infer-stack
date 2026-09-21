@@ -7,11 +7,36 @@ separately (see [SPANS.md](SPANS.md)); releases 1.0.0 and 1.0.1 ship contract `1
 
 ## [Unreleased]
 
+### Added
+
+- An *Answered too early* replay scenario: a one-second pause is read as the end of
+  the turn, the agent answers fast, and the turn ends interrupted. It is the
+  false-endpoint lesson in the page, using contract `1.0.0` events.
+- The page now replays a recorded turn as soon as it opens on recorded turns, so
+  `make demo` no longer lands on an empty waterfall.
+
+### Changed
+
+- The guide's three swaps in [Part 1](docs/1-swap-and-see.md) now describe what
+  they measure. Two of them did not reproduce as written: the safety-net timer had
+  no effect, and the smaller model made the turn slower, not the same. The false
+  endpoint needs `VOICE_USER_SPEECH_TIMEOUT=0.0` as well as a short silence window.
+- The diagram PNGs moved from `diagrams/slides/` to `diagrams/images/` and lost
+  the `.clean.` part of their names. `render-slides.mjs` is now
+  `render-images.mjs` and renders only the images the docs use.
+- `make help` no longer prints a stray line from the Makefile's comments.
+
+### Fixed
+
+- `make trace` failed with `no 'e2e.speech_end_to_first_audio' spans` whenever the
+  turn closed before the last transcript arrived, because that transcript started
+  a new logical turn and discarded the open budget window. The window now survives
+  it, and the budget prints `llm 2x - work was discarded`.
+
 ### Removed
 
-- Six presentation-size slide images in `diagrams/slides/` (`*.dark.png` and
-  `*.light.png` without `clean`). Nothing used them, and
-  `node diagrams/render-slides.mjs` regenerates them.
+- Six presentation-size slide images (`*.dark.png` and `*.light.png` without
+  `clean`). Nothing used them.
 - Three helpers in `voice_agent/analysis/measurement.py` that nothing called:
   `load_traces`, `overlap_report` and `stage_table`.
 

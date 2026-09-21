@@ -1,7 +1,8 @@
 # Where Did My 800 Milliseconds Go?
 #
 #   make setup-demo replay safe fixtures in the browser: Python + Node deps only
-#   make demo       open the page on synthetic fixtures at 127.0.0.1:8080, no mic or model
+#   make demo       open the page on synthetic fixtures at 127.0.0.1:8080, no mic or model;
+#                   it replays a turn by itself, and the dropdown picks another
 #   make budget     read a recorded turn, no install needed
 #   make demo-live  talk to the agent and watch measured stages live (127.0.0.1:8080)
 #   make live       open the page on the live agent (127.0.0.1:8080)
@@ -43,7 +44,8 @@ LIVE_ENV = VOICE_AGENT=$${VOICE_AGENT-library} \
 .PHONY: help setup setup-demo models budget fixtures record trace devices demo demo-live live viewer test test-all ui-test ui-build clean
 
 help:
-	@grep -E '^#   ' Makefile | sed 's/^#   //'
+	@# The header block only: it ends at the first blank line.
+	@awk '/^$$/ {exit} /^#   / {sub(/^#   /, ""); print}' Makefile
 
 setup-demo: ## install what the fixture replay needs: Python deps + UI deps (Node >= 20.19 or 22.12)
 	@# PyAudio has no prebuilt macOS wheel: it compiles against Homebrew's portaudio.
