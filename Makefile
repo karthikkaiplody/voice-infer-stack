@@ -46,6 +46,10 @@ help:
 	@grep -E '^#   ' Makefile | sed 's/^#   //'
 
 setup-demo: ## install what the fixture replay needs: Python deps + UI deps (Node >= 20.19 or 22.12)
+	@# PyAudio has no prebuilt macOS wheel: it compiles against Homebrew's portaudio.
+	@# Without it `uv sync` fails deep inside a C compiler; say what to do instead.
+	@[ -e "$$(brew --prefix portaudio 2>/dev/null)/include/portaudio.h" ] || \
+	  { echo "portaudio is missing. Install it first:  brew install portaudio"; exit 1; }
 	uv sync
 	npm --prefix ui ci
 
