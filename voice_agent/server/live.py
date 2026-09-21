@@ -78,6 +78,7 @@ SCENARIOS = {
     "normal-completed": "normal-completed.jsonl",
     "slow-blocking-tool": "slow-blocking-tool.jsonl",
     "interrupted": "interrupted.jsonl",
+    "false-endpoint": "false-endpoint.jsonl",
     "failed-tool": "failed-tool.jsonl",
     "grounded-answer": "grounded-answer.jsonl",
 }

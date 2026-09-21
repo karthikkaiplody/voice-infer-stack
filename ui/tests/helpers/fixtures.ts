@@ -19,7 +19,7 @@ const json = raw(
   }),
 );
 
-export const FIXTURE_NAMES = ["normal-completed", "slow-blocking-tool", "interrupted", "failed-tool", "grounded-answer"] as const;
+export const FIXTURE_NAMES = ["normal-completed", "slow-blocking-tool", "interrupted", "false-endpoint", "failed-tool", "grounded-answer"] as const;
 export type FixtureName = (typeof FIXTURE_NAMES)[number];
 
 const find = (files: Record<string, string>, name: string): string => {

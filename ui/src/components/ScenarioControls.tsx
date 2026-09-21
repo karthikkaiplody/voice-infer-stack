@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { scenarioBlurb, scenarioTitle } from "../model/scenarios";
+import { useEffect, useState } from "react";
+import { autoplayScenario, scenarioBlurb, scenarioTitle } from "../model/scenarios";
 import { useStore } from "../state/store";
 import { requestReplay } from "../stream/api";
 import styles from "./layout.module.css";
@@ -9,6 +9,14 @@ export function ScenarioControls() {
   const { state, dispatch } = useStore();
   const hello = state.hello;
   const [selected, setSelected] = useState<string | null>(null);
+
+  // A fresh `hello` means the page has just opened or switched to recorded turns.
+  // Keyed on it alone, so a turn event never triggers another replay.
+  useEffect(() => {
+    const first = autoplayScenario(state);
+    if (first !== null) void requestReplay(first);
+  }, [hello]);
+
   if (hello === null || hello.mode !== "fixture") return null;
 
   const scenario = selected ?? hello.scenarios[0] ?? null;

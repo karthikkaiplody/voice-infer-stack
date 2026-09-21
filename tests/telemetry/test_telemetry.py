@@ -632,6 +632,7 @@ def test_turn_outcomes_are_not_mixed():
         "normal-completed.jsonl": "turn.completed",
         "slow-blocking-tool.jsonl": "turn.completed",
         "interrupted.jsonl": "turn.interrupted",
+        "false-endpoint.jsonl": "turn.interrupted",
         "failed-tool.jsonl": "turn.failed",
     }
     for name, terminal in expected.items():

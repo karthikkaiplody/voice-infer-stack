@@ -5,6 +5,7 @@ import { parseServerMessage } from "../src/contract/events";
 import { epochFixtureEvents, fixtureEvents, fixtureHello, fold, rawFixtureEvents, replayState, telemetry } from "./helpers/fixtures";
 import { initialState, reducer, type ViewState } from "../src/state/reducer";
 import { StaticStore } from "../src/state/store";
+import { autoplayScenario } from "../src/model/scenarios";
 import { liveHello } from "./helpers/tuning";
 
 const html = (state: ViewState) =>
@@ -263,6 +264,7 @@ describe("live-scale timestamps (epoch nanoseconds)", () => {
     ["normal-completed", "320 ms", "Completed"],
     ["slow-blocking-tool", "3,270 ms", "Completed"],
     ["interrupted", "270 ms", "Interrupted"],
+    ["false-endpoint", "770 ms", "Interrupted"],
   ] as const)("%s renders the same numbers as the small-timestamp fixture", (name, metric, outcome) => {
     const state = fold([fixtureHello(), { kind: "replay_reset", scenario: name },
                         ...epochFixtureEvents(name).map(telemetry)]);
@@ -379,5 +381,18 @@ describe("the synthetic-data banner", () => {
 
   it("is not shown before the server has said which source this is", () => {
     expect(text(html(initialState))).not.toContain("Synthetic example data");
+  });
+});
+
+describe("opening the page on recorded turns", () => {
+  it("starts the first scenario by itself, and only while nothing is on screen", () => {
+    expect(autoplayScenario(fold([fixtureHello()]))).toBe("normal-completed");
+    expect(autoplayScenario(replayState("normal-completed", 3))).toBeNull();
+    expect(autoplayScenario(fold([fixtureHello(), { kind: "replay_reset", scenario: "normal-completed" }]))).toBeNull();
+  });
+
+  it("does nothing in live mode or before the server has said hello", () => {
+    expect(autoplayScenario(initialState)).toBeNull();
+    expect(autoplayScenario(fold([{ ...fixtureHello(), mode: "live" as const, scenarios: [], replay: null }]))).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ describe("primary metric: speech ended → output transport accepted first audio
     ["normal-completed", 320],
     ["slow-blocking-tool", 3270],
     ["interrupted", 270],
+    ["false-endpoint", 770],
   ] as const)("%s measures %d ms from the recorded timestamps", (name, ms) => {
     expect(primaryMetric(turnOf(fixtureEvents(name)))).toEqual({ status: "measured", ms });
   });
